@@ -6,7 +6,7 @@ No authentication (prototype). Everything runs on Cloudflare free tiers.
 ```
 /api     Express API running on Cloudflare Workers (D1 database)
 /shared  zod schemas + TypeScript types shared by api and app
-/app     Expo app (phase 2+)
+/app     Expo app (Expo SDK 58, expo-router, TanStack Query)
 ```
 
 Money is stored as integers in the smallest currency unit (pence). `kg` products are priced per kg.
@@ -136,3 +136,64 @@ curl -X POST "$API/bills/1/merge/2"
   a handful of rows, so a single shop won't get near it. Listing large tables counts every row scanned as
   a read, which is why list endpoints are capped (500 products, 200 bills).
 - Over a limit, requests fail with errors until the daily reset (00:00 UTC); nothing is billed on the free plan.
+
+---
+
+## Phase 2 — App (products + billing, manual search)
+
+Screens: **Bill** (current bill: edit qty, swipe left to delete, Hold / Merge in / Pay), **Add item**
+(search, pick, quantity, add), **Held** (resume or merge into current), **Products** (search, add, edit,
+delete) and **History** (paid bills, read-only).
+
+The API address lives in one file: `app/src/config.ts`. Change `API_BASE_URL` there.
+
+### Quickest check: in a browser on your Mac
+
+Start the API (`npm run dev` in `api/`), then in a second terminal:
+
+```bash
+cd app
+npm run web
+```
+
+Press `w` if the browser doesn't open by itself. `API_BASE_URL` is `http://localhost:8787` by default, which works here.
+
+### On an Android phone (development build)
+
+The app runs as an Expo development build, not Expo Go. Build it once in the cloud with EAS (free Expo
+account). You only rebuild when native libraries change: phase 3 (camera) will need one rebuild.
+
+```bash
+cd app
+npx eas-cli@latest login
+npx eas-cli@latest init
+npx eas-cli@latest build --profile development --platform android
+```
+
+When the build finishes, open the link it prints on the phone and install the APK. Then start the dev server:
+
+```bash
+npm start
+```
+
+Open the installed **Shop Billing** app and scan the QR code shown in the terminal (phone and Mac on the
+same Wi-Fi).
+
+The phone can't reach `localhost` on your Mac. Pick one:
+
+- **Use the cloud API (recommended):** deploy it (Phase 1, "Deploy to Cloudflare") and set
+  `API_BASE_URL` to your `https://shop-billing-api.<subdomain>.workers.dev` URL.
+- **Use your Mac over Wi-Fi:** find the Mac's IP with `ipconfig getifaddr en0`, set
+  `API_BASE_URL = "http://<that IP>:8787"`, and start the API with `npm run dev:lan` instead of `npm run dev`.
+
+### iPhone
+
+`npx expo run:ios` runs the app in the iOS Simulator (needs Xcode). Installing a development build on a
+real iPhone needs a paid Apple Developer account, so for a free setup use Android.
+
+### Free-tier notes
+
+- **EAS Build (Expo free plan):** a limited number of cloud builds per month, in a lower-priority queue,
+  so a build can wait in line for a while. Check current numbers at https://expo.dev/pricing.
+  Code changes don't need a rebuild: `npm start` reloads them instantly.
+- Every screen talks to the same API, so the Workers and D1 limits from Phase 1 still apply.

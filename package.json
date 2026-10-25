@@ -3,10 +3,13 @@
   "private": true,
   "workspaces": [
     "shared",
-    "api"
+    "api",
+    "app"
   ],
   "scripts": {
     "api:dev": "npm run dev -w api",
-    "api:typecheck": "npm run typecheck -w api"
+    "api:typecheck": "npm run typecheck -w api",
+    "app:start": "npm run start -w app",
+    "app:typecheck": "npm run typecheck -w app"
   }
 }

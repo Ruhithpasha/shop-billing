@@ -186,7 +186,8 @@ The phone can't reach `localhost` on your Mac. Pick one:
 The **Scan** tab opens when the app starts.
 
 - **Barcode we sell:** the product appears. Pick the quantity and tap **Add to bill**; scanning resumes.
-- **Barcode we don't sell yet:** the API looks it up online (Open Food Facts, then UPCitemdb). The form is
+- **Barcode we don't sell yet:** the API looks it up online (Open Food Facts, Open Products Facts and
+  Open Beauty Facts together, then UPCitemdb). The form is
   pre-filled with the name and photo it found. Enter **your price**, choose piece/kg, tap **Save & add**.
   The product is saved with its barcode, so next time it's found instantly. If nothing is found online,
   type the name yourself.

@@ -385,7 +385,7 @@ function NewProduct({
           <Text style={styles.newTitle}>New product</Text>
           <Text style={text.muted}>
             {suggestion
-              ? `Found online (${suggestion.source === "openfoodfacts" ? "Open Food Facts" : "UPCitemdb"}) · ${code}`
+              ? `Found online (${suggestion.source_label ?? suggestion.source}) · ${code}`
               : `Not found online · ${code}`}
           </Text>
         </View>

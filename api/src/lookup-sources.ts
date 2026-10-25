@@ -1,8 +1,11 @@
 import type { BarcodeLookup } from "@shop/shared";
 
-// Free public barcode databases, tried in order. Neither needs an API key.
-// Open Food Facts: groceries, drinks, toiletries (millions of products).
-// UPCitemdb trial: general retail goods; limited to ~100 lookups/day per IP.
+// Free public barcode databases. None needs an API key.
+// The Open Food Facts family (same API, run in parallel):
+//   Open Food Facts      groceries and drinks (millions of products)
+//   Open Products Facts  general goods (stationery, household, electronics...)
+//   Open Beauty Facts    cosmetics and toiletries
+// UPCitemdb trial: general retail goods, mostly US; ~100 lookups/day per IP. Tried last.
 
 const USER_AGENT = "ShopBilling/0.1 (prototype billing app)";
 const TIMEOUT_MS = 4000;
@@ -18,7 +21,20 @@ function withQuantity(name: string, quantity: string | null) {
   return `${name} ${quantity}`;
 }
 
-export function fromOpenFoodFacts(code: string, json: unknown): BarcodeLookup | null {
+type OpenFactsSource = "openfoodfacts" | "openproductsfacts" | "openbeautyfacts";
+
+const OPEN_FACTS: { source: OpenFactsSource; host: string; label: string }[] = [
+  { source: "openfoodfacts", host: "world.openfoodfacts.org", label: "Open Food Facts" },
+  { source: "openproductsfacts", host: "world.openproductsfacts.org", label: "Open Products Facts" },
+  { source: "openbeautyfacts", host: "world.openbeautyfacts.org", label: "Open Beauty Facts" },
+];
+
+/** Parses a response from any Open Food Facts-family database (they share one format). */
+export function fromOpenFoodFacts(
+  code: string,
+  json: unknown,
+  source: OpenFactsSource = "openfoodfacts",
+): BarcodeLookup | null {
   const data = json as { status?: number; product?: Record<string, unknown> } | null;
   if (!data || data.status !== 1 || !data.product) return null;
   const p = data.product;
@@ -32,7 +48,8 @@ export function fromOpenFoodFacts(code: string, json: unknown): BarcodeLookup | 
     name: withQuantity(name, str(p.quantity)),
     brand,
     image_url: str(p.image_front_small_url) ?? str(p.image_front_url) ?? str(p.image_url),
-    source: "openfoodfacts",
+    source,
+    source_label: OPEN_FACTS.find((s) => s.source === source)!.label,
   };
 }
 
@@ -48,6 +65,7 @@ export function fromUpcItemDb(code: string, json: unknown): BarcodeLookup | null
     brand: str(item.brand),
     image_url: str(images.find((u) => typeof u === "string" && u.startsWith("https://"))),
     source: "upcitemdb",
+    source_label: "UPCitemdb",
   };
 }
 
@@ -68,10 +86,13 @@ async function getJson(url: string): Promise<unknown> {
 export async function lookupBarcodeOnline(code: string): Promise<BarcodeLookup | null> {
   if (!isRetailBarcode(code)) return null;
   const fields = "product_name,generic_name,brands,quantity,image_front_small_url,image_front_url,image_url";
-  const off = fromOpenFoodFacts(
-    code,
-    await getJson(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=${fields}`),
+  // Ask the whole family at once; prefer them in the order listed.
+  const results = await Promise.all(
+    OPEN_FACTS.map(async (s) =>
+      fromOpenFoodFacts(code, await getJson(`https://${s.host}/api/v2/product/${code}.json?fields=${fields}`), s.source),
+    ),
   );
-  if (off) return off;
+  const found = results.find((r) => r != null);
+  if (found) return found;
   return fromUpcItemDb(code, await getJson(`https://api.upcitemdb.com/prod/trial/lookup?upc=${code}`));
 }

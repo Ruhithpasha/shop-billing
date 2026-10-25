@@ -7,6 +7,10 @@
     "icon": "./assets/images/icon.png",
     "scheme": "shopbilling",
     "userInterfaceStyle": "light",
+    "platforms": [
+      "android",
+      "web"
+    ],
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#1D4ED8",
@@ -15,7 +19,13 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.shopbilling.app"
+      "package": "com.shopbilling.app",
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "output": "single",
@@ -35,10 +45,6 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    },
-    "ios": {
-      "bundleIdentifier": "com.shopbilling.app",
-      "supportsTablet": true
     }
   }
 }

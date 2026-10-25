@@ -102,6 +102,18 @@ export function EmptyState({ title, hint, children }: { title: string; hint?: st
   );
 }
 
+/** Shared look for text fields. */
+export const inputStyle = {
+  height: 54,
+  borderWidth: 1,
+  borderColor: colors.border,
+  borderRadius: 12,
+  backgroundColor: colors.card,
+  paddingHorizontal: 14,
+  fontSize: 18,
+  color: colors.text,
+} as const;
+
 export const text = StyleSheet.create({
   title: { fontSize: 20, fontWeight: "700", color: colors.text },
   body: { fontSize: 17, color: colors.text },

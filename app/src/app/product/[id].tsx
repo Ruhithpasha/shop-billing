@@ -1,13 +1,16 @@
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Unit } from "@shop/shared";
-import { Button, colors, ErrorState, Loading, text } from "@/components/ui";
+import { Button, colors, ErrorState, inputStyle, Loading, text } from "@/components/ui";
+import { UnitToggle } from "@/components/unit-toggle";
+import { CURRENCY_SYMBOL } from "@/config";
 import { api } from "@/lib/api";
 import { confirm, errorMessage, notify } from "@/lib/dialogs";
 import { moneyToInput, parseMoney } from "@/lib/money";
 import { useInvalidateProducts, useProduct } from "@/lib/queries";
-import { CURRENCY_SYMBOL } from "@/config";
+import { onNextScan } from "@/lib/scan-result";
 
 /** Add (`/product/new`) or edit (`/product/12`) a product. */
 export default function ProductFormScreen() {
@@ -16,6 +19,7 @@ export default function ProductFormScreen() {
   const productId = isNew ? null : Number(id);
   const product = useProduct(productId);
   const invalidate = useInvalidateProducts();
+  const insets = useSafeAreaInsets();
 
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
@@ -32,11 +36,20 @@ export default function ProductFormScreen() {
     setUnit(product.data.unit);
   }, [product.data]);
 
+  // Stop listening for a scan if the user leaves this screen.
+  const [stopListening, setStopListening] = useState<(() => void) | null>(null);
+  useEffect(() => () => stopListening?.(), [stopListening]);
+
   if (!isNew && product.isPending) return <Loading />;
   if (!isNew && product.isError) return <ErrorState error={product.error} onRetry={() => product.refetch()} />;
 
   const priceMinor = parseMoney(price);
   const valid = name.trim().length > 0 && priceMinor != null;
+
+  const scanBarcode = () => {
+    setStopListening(() => onNextScan(setBarcode));
+    router.push("/scan-barcode");
+  };
 
   const save = async () => {
     if (!valid) return;
@@ -66,29 +79,20 @@ export default function ProductFormScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
       <Stack.Screen options={{ title: isNew ? "New product" : "Edit product" }} />
-      <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[styles.form, { paddingBottom: 16 + insets.bottom }]}
+        keyboardShouldPersistTaps="handled"
+      >
         <View>
           <Text style={text.label}>Name</Text>
-          <TextInput value={name} onChangeText={setName} placeholder="e.g. Whole Milk 1L" style={styles.input} />
+          <TextInput value={name} onChangeText={setName} placeholder="e.g. Whole Milk 1L" style={inputStyle} />
         </View>
 
         <View>
           <Text style={text.label}>Sold by</Text>
-          <View style={styles.segment}>
-            {(["piece", "kg"] as const).map((u) => (
-              <Pressable
-                key={u}
-                onPress={() => setUnit(u)}
-                style={[styles.segmentItem, unit === u && styles.segmentActive]}
-              >
-                <Text style={[styles.segmentText, unit === u && styles.segmentTextActive]}>
-                  {u === "piece" ? "Piece" : "Weight (kg)"}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          <UnitToggle value={unit} onChange={setUnit} />
         </View>
 
         <View>
@@ -101,19 +105,22 @@ export default function ProductFormScreen() {
             onChangeText={setPrice}
             placeholder="0.00"
             keyboardType="decimal-pad"
-            style={[styles.input, price !== "" && priceMinor == null && styles.invalid]}
+            style={[inputStyle, price !== "" && priceMinor == null && { borderColor: colors.danger }]}
           />
         </View>
 
         <View>
           <Text style={text.label}>Barcode (optional)</Text>
-          <TextInput
-            value={barcode}
-            onChangeText={setBarcode}
-            placeholder="e.g. 5000128104517"
-            keyboardType="number-pad"
-            style={styles.input}
-          />
+          <View style={styles.barcodeRow}>
+            <TextInput
+              value={barcode}
+              onChangeText={setBarcode}
+              placeholder="e.g. 5000128104517"
+              keyboardType="number-pad"
+              style={[inputStyle, { flex: 1 }]}
+            />
+            <Button title="Scan" variant="secondary" onPress={scanBarcode} />
+          </View>
         </View>
 
         <Button big title={isNew ? "Add product" : "Save changes"} onPress={save} disabled={!valid} loading={saving} />
@@ -125,29 +132,5 @@ export default function ProductFormScreen() {
 
 const styles = StyleSheet.create({
   form: { padding: 16, gap: 18 },
-  input: {
-    height: 56,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.card,
-    paddingHorizontal: 14,
-    fontSize: 18,
-    color: colors.text,
-  },
-  invalid: { borderColor: colors.danger },
-  segment: { flexDirection: "row", gap: 10 },
-  segmentItem: {
-    flex: 1,
-    height: 56,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  segmentActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  segmentText: { fontSize: 17, fontWeight: "600", color: colors.text },
-  segmentTextActive: { color: "#fff" },
+  barcodeRow: { flexDirection: "row", gap: 10 },
 });

@@ -123,3 +123,15 @@ export interface BillSummary extends Bill {
 export interface ApiError {
   error: string;
 }
+
+// ---------- Online barcode lookup ----------
+
+/** A product found in a public barcode database (not yet in our products table). */
+export interface BarcodeLookup {
+  barcode: string;
+  /** Suggested product name, e.g. "Coca-Cola Original 330 ml". */
+  name: string;
+  brand: string | null;
+  image_url: string | null;
+  source: "openfoodfacts" | "upcitemdb";
+}

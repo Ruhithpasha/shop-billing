@@ -1,5 +1,6 @@
 import type {
   AddItem,
+  BarcodeLookup,
   BillStatus,
   BillSummary,
   BillWithItems,
@@ -34,11 +35,22 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return data as T;
 }
 
+function nullOn404(e: unknown): null {
+  if (e instanceof ApiError && e.status === 404) return null;
+  throw e;
+}
+
 export const api = {
   // Products
   listProducts: (search?: string) =>
     request<Product[]>("GET", `/products${search ? `?search=${encodeURIComponent(search)}` : ""}`),
   getProduct: (id: number) => request<Product>("GET", `/products/${id}`),
+  /** Our product with this barcode, or null if we don't sell it yet. */
+  findByBarcode: (code: string) =>
+    request<Product>("GET", `/products/barcode/${encodeURIComponent(code)}`).catch(nullOn404),
+  /** Name/image suggestion from public barcode databases, or null if unknown. */
+  lookupBarcodeOnline: (code: string) =>
+    request<BarcodeLookup>("GET", `/lookup/barcode/${encodeURIComponent(code)}`).catch(nullOn404),
   createProduct: (p: ProductCreate) => request<Product>("POST", "/products", p),
   updateProduct: (id: number, p: ProductUpdate) => request<Product>("PATCH", `/products/${id}`, p),
   deleteProduct: (id: number) => request<{ ok: true }>("DELETE", `/products/${id}`),

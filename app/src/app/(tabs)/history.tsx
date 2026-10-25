@@ -21,7 +21,7 @@ export default function HistoryScreen() {
         renderItem={({ item }) => (
           <BillSummaryRow
             bill={item}
-            onPress={() => router.push({ pathname: "/bill/[id]", params: { id: String(item.id) } })}
+            onPress={() => router.push({ pathname: "/bills/[id]", params: { id: String(item.id) } })}
           />
         )}
       />

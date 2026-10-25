@@ -6,7 +6,7 @@ No authentication (prototype). Everything runs on Cloudflare free tiers.
 ```
 /api     Express API running on Cloudflare Workers (D1 database)
 /shared  zod schemas + TypeScript types shared by api and app
-/app     Expo app (Expo SDK 58, expo-router, TanStack Query)
+/app     Expo app for Android (Expo SDK 58, expo-router, TanStack Query, VisionCamera)
 ```
 
 Money is stored as integers in the smallest currency unit (pence). `kg` products are priced per kg.
@@ -141,27 +141,18 @@ curl -X POST "$API/bills/1/merge/2"
 
 ## Phase 2 — App (products + billing, manual search)
 
-Screens: **Bill** (current bill: edit qty, swipe left to delete, Hold / Merge in / Pay), **Add item**
-(search, pick, quantity, add), **Held** (resume or merge into current), **Products** (search, add, edit,
-delete) and **History** (paid bills, read-only).
+The app is built for **Android phones** (portrait).
+
+Screens: **Scan** (phase 3), **Bill** (current bill: edit qty, swipe left to delete, Hold / Merge in / Pay),
+**Add item** (search, pick, quantity, add), **Held** (resume or merge into current), **Products**
+(search, add, edit, delete) and **History** (paid bills, read-only).
 
 The API address lives in one file: `app/src/config.ts`. Change `API_BASE_URL` there.
 
-### Quickest check: in a browser on your Mac
+### Install it on your Android phone (development build)
 
-Start the API (`npm run dev` in `api/`), then in a second terminal:
-
-```bash
-cd app
-npm run web
-```
-
-Press `w` if the browser doesn't open by itself. `API_BASE_URL` is `http://localhost:8787` by default, which works here.
-
-### On an Android phone (development build)
-
-The app runs as an Expo development build, not Expo Go. Build it once in the cloud with EAS (free Expo
-account). You only rebuild when native libraries change: phase 3 (camera) will need one rebuild.
+The app runs as an Expo development build, not Expo Go. EAS builds it in the cloud (free Expo account).
+Rebuild only when native libraries change. Code changes reload instantly without a rebuild.
 
 ```bash
 cd app
@@ -186,14 +177,41 @@ The phone can't reach `localhost` on your Mac. Pick one:
 - **Use your Mac over Wi-Fi:** find the Mac's IP with `ipconfig getifaddr en0`, set
   `API_BASE_URL = "http://<that IP>:8787"`, and start the API with `npm run dev:lan` instead of `npm run dev`.
 
-### iPhone
+---
 
-`npx expo run:ios` runs the app in the iOS Simulator (needs Xcode). Installing a development build on a
-real iPhone needs a paid Apple Developer account, so for a free setup use Android.
+## Phase 3 — Barcode scanning
+
+The **Scan** tab opens when the app starts.
+
+- **Barcode we sell:** the product appears. Pick the quantity and tap **Add to bill**; scanning resumes.
+- **Barcode we don't sell yet:** the API looks it up online (Open Food Facts, then UPCitemdb). The form is
+  pre-filled with the name and photo it found. Enter **your price**, choose piece/kg, tap **Save & add**.
+  The product is saved with its barcode, so next time it's found instantly. If nothing is found online,
+  type the name yourself.
+- **Damaged label:** tap **Type barcode** and enter the number.
+- **Torch** button for dim counters; pinch to zoom and tap to focus work on the preview.
+- The chip at the top right shows the current bill (items and total). Tap it to open the bill.
+- In **Products → edit**, the **Scan** button next to the barcode field fills it from the camera.
+
+Camera: `react-native-vision-camera` v5 with its ML Kit barcode scanner (EAN-13/8, UPC-A/E, Code 128/39, ITF).
+
+### Rebuild needed
+
+The camera is a native library, so install a new development build once:
+
+```bash
+cd app
+npx eas-cli@latest build --profile development --platform android
+```
+
+Install the new APK over the old one, then `npm start` as before. Allow camera access the first time.
 
 ### Free-tier notes
 
 - **EAS Build (Expo free plan):** a limited number of cloud builds per month, in a lower-priority queue,
   so a build can wait in line for a while. Check current numbers at https://expo.dev/pricing.
-  Code changes don't need a rebuild: `npm start` reloads them instantly.
-- Every screen talks to the same API, so the Workers and D1 limits from Phase 1 still apply.
+- **Open Food Facts:** free and open; they ask for no more than about 100 product lookups per minute.
+  A lookup only happens for barcodes you don't sell yet, so a counter never gets near it.
+- **UPCitemdb trial (fallback):** about 100 lookups per day, shared across Cloudflare's outgoing IPs, so it
+  may sometimes answer "rate limited". The app then just asks you to type the name.
+- **Cloudflare Workers Free:** each lookup makes up to 2 outgoing requests (the limit is 50 per request).

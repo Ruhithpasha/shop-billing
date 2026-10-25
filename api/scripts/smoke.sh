@@ -82,4 +82,10 @@ call POST "/products" '{"name":"Throwaway","price":1}'; T=$(jq .id <<<"$BODY")
 call DELETE "/products/$T"; expect 200 "delete unused product"
 call GET "/nope"; expect 404 "unknown route -> JSON 404" '.error' 'Not found'
 
+# ---- Online barcode lookup (Open Food Facts, then UPCitemdb) ----
+call GET "/lookup/barcode/NOT-A-GTIN"; expect 404 "non-retail code isn't looked up online"
+call GET "/lookup/barcode/5449000000996"
+if [[ "$CODE" == 200 ]]; then expect 200 "online lookup found Coca-Cola" '.source' 'openfoodfacts'
+else echo "skip online lookup returned $CODE (no internet from the API?)"; fi
+
 echo "All $PASS checks passed against $API"

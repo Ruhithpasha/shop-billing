@@ -42,14 +42,14 @@ export default function HeldBillsScreen() {
       }
       storeBill(await api.resume(bill.id));
       setBillId(bill.id);
-      router.navigate("/");
+      router.navigate("/bill");
     });
 
   const mergeIntoCurrent = (bill: BillSummary) =>
     withBusy(bill.id, async () => {
       const target = await ensureBill();
       storeBill(await api.merge(target, bill.id));
-      router.navigate("/");
+      router.navigate("/bill");
     });
 
   if (held.isPending) return <Loading />;

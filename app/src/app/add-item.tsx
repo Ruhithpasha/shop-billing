@@ -1,6 +1,7 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import { FlatList, KeyboardAvoidingView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Product } from "@shop/shared";
 import { ProductRow } from "@/components/product-row";
 import { QtyPicker } from "@/components/qty-picker";
@@ -20,6 +21,8 @@ export default function AddItemScreen() {
   const [qty, setQty] = useState(1);
   const [lastAdded, setLastAdded] = useState<string | null>(null);
   const products = useProducts(useDebounced(search));
+  const insets = useSafeAreaInsets();
+  const panelStyle = [styles.panel, { paddingBottom: 12 + insets.bottom }];
   const { ensureBill } = useCurrentBill();
   const add = useBillMutation(async (v: { product: Product; qty: number }) =>
     api.addItem(await ensureBill(), { product_id: v.product.id, qty: v.qty }),
@@ -43,7 +46,7 @@ export default function AddItemScreen() {
   };
 
   return (
-    <View style={styles.screen}>
+    <KeyboardAvoidingView style={styles.screen} behavior="padding">
       <SearchBox value={search} onChangeText={setSearch} autoFocus />
       {lastAdded && <Text style={styles.added}>✓ Added {lastAdded}</Text>}
 
@@ -65,7 +68,7 @@ export default function AddItemScreen() {
       )}
 
       {selected ? (
-        <View style={styles.panel}>
+        <View style={panelStyle}>
           <Text style={styles.panelName} numberOfLines={1}>
             {selected.name}
           </Text>
@@ -79,11 +82,11 @@ export default function AddItemScreen() {
           </View>
         </View>
       ) : (
-        <View style={styles.panel}>
+        <View style={panelStyle}>
           <Button title="Done" variant="secondary" onPress={() => router.back()} />
         </View>
       )}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -3,6 +3,7 @@ import express from "express";
 import { cors, errorHandler, notFound } from "./http";
 import { productsRouter } from "./routes/products";
 import { billsRouter } from "./routes/bills";
+import { lookupRouter } from "./routes/lookup";
 
 const app = express();
 
@@ -15,6 +16,7 @@ app.get("/", (_req, res) => {
 
 app.use(productsRouter);
 app.use(billsRouter);
+app.use(lookupRouter);
 
 app.use(notFound);
 app.use(errorHandler);

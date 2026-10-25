@@ -3,12 +3,14 @@ import express from "express";
 import { cors, errorHandler, notFound } from "./http";
 import { productsRouter } from "./routes/products";
 import { billsRouter } from "./routes/bills";
+import { imagesRouter } from "./routes/images";
 import { lookupRouter } from "./routes/lookup";
 
 const app = express();
 
 app.use(cors);
-app.use(express.json({ limit: "1mb" }));
+// Photo uploads (POST /products/:id/images) send the image as base64 JSON.
+app.use(express.json({ limit: "8mb" }));
 
 app.get("/", (_req, res) => {
   res.json({ ok: true, service: "shop-billing-api" });
@@ -17,6 +19,7 @@ app.get("/", (_req, res) => {
 app.use(productsRouter);
 app.use(billsRouter);
 app.use(lookupRouter);
+app.use(imagesRouter);
 
 app.use(notFound);
 app.use(errorHandler);

@@ -82,6 +82,26 @@ call POST "/products" '{"name":"Throwaway","price":1}'; T=$(jq .id <<<"$BODY")
 call DELETE "/products/$T"; expect 200 "delete unused product"
 call GET "/nope"; expect 404 "unknown route -> JSON 404" '.error' 'Not found'
 
+# ---- Product photos (R2 + Vectorize) ----
+# A tiny real JPEG and a dummy 960-number embedding (the app sends a MobileNet vector).
+JPEG_B64="/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wAARCAAIAAgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDmaKKK8g/RD//Z"
+EMB=$(jq -nc '[range(960) | (. % 7) / 7]')
+call POST "/products" '{"name":"Photo Test","price":100}'; P=$(jq .id <<<"$BODY")
+call POST "/products/$P/images" "{\"image_base64\":\"$JPEG_B64\",\"embedding\":$EMB}"
+expect 201 "upload photo" '.url|startswith("/images/")' 'true'; IMG=$(jq .id <<<"$BODY")
+call GET "/products/$P/images"; expect 200 "list photos" 'length' '1'
+call GET "/products?search=Photo%20Test"; expect 200 "product list has image_count" '.[0].image_count' '1'
+[[ $(curl -s -o /dev/null -w '%{http_code} %{content_type}' "$API/images/$IMG") == "200 image/jpeg" ]] || { echo "FAIL serve photo"; exit 1; }
+PASS=$((PASS+1)); echo "ok  serve photo from R2"
+call POST "/products/$P/images" "{\"image_base64\":\"$JPEG_B64\",\"embedding\":[1,2,3]}"; expect 400 "wrong embedding length -> 400"
+NOT_IMG=$(printf 'x%.0s' {1..200} | base64 | tr -d '\n')
+call POST "/products/$P/images" "{\"image_base64\":\"$NOT_IMG\",\"embedding\":$EMB}"; expect 400 "non-image bytes -> 400"
+call DELETE "/products/$P/images/$IMG"; expect 200 "delete photo"
+call GET "/products/$P/images"; expect 200 "photo gone" 'length' '0'
+call POST "/products/$P/images" "{\"image_base64\":\"$JPEG_B64\",\"embedding\":$EMB}"; IMG2=$(jq .id <<<"$BODY")
+call DELETE "/products/$P"; expect 200 "delete product with photo"
+call GET "/images/$IMG2"; expect 404 "its photo is removed too"
+
 # ---- Online barcode lookup (Open Food Facts, then UPCitemdb) ----
 call GET "/lookup/barcode/NOT-A-GTIN"; expect 404 "non-retail code isn't looked up online"
 call GET "/lookup/barcode/5449000000996"

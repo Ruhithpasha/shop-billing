@@ -9,6 +9,7 @@ import {
 } from "@shop/shared";
 import { db } from "../db";
 import { HttpError, parse } from "../http";
+import { deleteImages } from "./images";
 
 export const productsRouter = Router();
 
@@ -18,18 +19,20 @@ async function getProduct(id: number): Promise<Product> {
   return product;
 }
 
-// GET /products?search=milk
+// GET /products?search=milk  (each product includes image_count)
+const LIST_COLUMNS = `p.*, (SELECT COUNT(*) FROM product_images i WHERE i.product_id = p.id) AS image_count`;
+
 productsRouter.get("/products", async (req, res) => {
   const { search } = parse(ProductSearchQuerySchema, req.query);
   const stmt = search
     ? db()
         .prepare(
-          `SELECT * FROM products
-            WHERE name LIKE ?1 ESCAPE '\\' OR barcode = ?2
-            ORDER BY name COLLATE NOCASE LIMIT 100`,
+          `SELECT ${LIST_COLUMNS} FROM products p
+            WHERE p.name LIKE ?1 ESCAPE '\\' OR p.barcode = ?2
+            ORDER BY p.name COLLATE NOCASE LIMIT 100`,
         )
         .bind(`%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`, search)
-    : db().prepare("SELECT * FROM products ORDER BY name COLLATE NOCASE LIMIT 500");
+    : db().prepare(`SELECT ${LIST_COLUMNS} FROM products p ORDER BY p.name COLLATE NOCASE LIMIT 500`);
   const { results } = await stmt.all<Product>();
   res.json(results);
 });
@@ -82,7 +85,12 @@ productsRouter.delete("/products/:id", async (req, res) => {
   if (used) {
     throw new HttpError(409, "Product appears on bills and cannot be deleted");
   }
-  // product_images rows cascade. (R2 objects / vectors are cleaned up once images exist, phase 4.)
+  // Photos live in R2 + Vectorize too, so remove them explicitly before the row.
+  const { results: images } = await db()
+    .prepare("SELECT id, r2_key FROM product_images WHERE product_id = ?")
+    .bind(id)
+    .all<{ id: number; r2_key: string }>();
+  await deleteImages(images);
   await db().prepare("DELETE FROM products WHERE id = ?").bind(id).run();
   res.json({ ok: true });
 });

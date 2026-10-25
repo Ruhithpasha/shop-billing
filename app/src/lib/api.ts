@@ -1,4 +1,5 @@
 import type {
+  AddImage,
   AddItem,
   BarcodeLookup,
   BillStatus,
@@ -6,6 +7,7 @@ import type {
   BillWithItems,
   Product,
   ProductCreate,
+  ProductImage,
   ProductUpdate,
 } from "@shop/shared";
 import { API_BASE_URL } from "@/config";
@@ -35,6 +37,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return data as T;
 }
 
+/** Full URL for an API path such as a photo's "/images/12". */
+export const apiUrl = (path: string) => `${API_BASE_URL}${path}`;
+
 function nullOn404(e: unknown): null {
   if (e instanceof ApiError && e.status === 404) return null;
   throw e;
@@ -54,6 +59,13 @@ export const api = {
   createProduct: (p: ProductCreate) => request<Product>("POST", "/products", p),
   updateProduct: (id: number, p: ProductUpdate) => request<Product>("PATCH", `/products/${id}`, p),
   deleteProduct: (id: number) => request<{ ok: true }>("DELETE", `/products/${id}`),
+
+  // Product photos (feed the image matcher)
+  listImages: (productId: number) => request<ProductImage[]>("GET", `/products/${productId}/images`),
+  addImage: (productId: number, body: AddImage) =>
+    request<ProductImage>("POST", `/products/${productId}/images`, body),
+  deleteImage: (productId: number, imageId: number) =>
+    request<{ ok: true }>("DELETE", `/products/${productId}/images/${imageId}`),
 
   // Bills
   createBill: () => request<BillWithItems>("POST", "/bills"),

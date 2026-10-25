@@ -28,6 +28,7 @@ export default function RootLayout() {
             <Stack.Screen name="add-item" options={{ title: "Add item", presentation: "modal" }} />
             <Stack.Screen name="merge" options={{ title: "Merge a bill in", presentation: "modal" }} />
             <Stack.Screen name="scan-barcode" options={{ title: "Scan barcode" }} />
+            <Stack.Screen name="product-photos/[id]" options={{ title: "Photos" }} />
             <Stack.Screen name="product/[id]" options={{ title: "Product" }} />
             <Stack.Screen name="bills/[id]" options={{ title: "Bill" }} />
           </Stack>

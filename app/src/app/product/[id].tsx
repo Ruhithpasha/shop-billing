@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { KeyboardAvoidingView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Unit } from "@shop/shared";
+import { ProductPhotos } from "@/components/product-photos";
 import { Button, colors, ErrorState, inputStyle, Loading, text } from "@/components/ui";
 import { UnitToggle } from "@/components/unit-toggle";
 import { CURRENCY_SYMBOL } from "@/config";
@@ -56,8 +57,14 @@ export default function ProductFormScreen() {
     setSaving(true);
     try {
       const body = { name: name.trim(), price: priceMinor!, barcode: barcode.trim() || null, unit };
-      if (isNew) await api.createProduct(body);
-      else await api.updateProduct(productId!, body);
+      if (isNew) {
+        const created = await api.createProduct(body);
+        invalidate();
+        // Stay on the product so photos can be added straight away.
+        router.replace({ pathname: "/product/[id]", params: { id: String(created.id) } });
+        return;
+      }
+      await api.updateProduct(productId!, body);
       invalidate();
       router.back();
     } catch (e) {
@@ -117,11 +124,13 @@ export default function ProductFormScreen() {
               onChangeText={setBarcode}
               placeholder="e.g. 5000128104517"
               keyboardType="number-pad"
-              style={[inputStyle, { flex: 1 }]}
+              style={[inputStyle, { flex: 1, minWidth: 0 }]}
             />
             <Button title="Scan" variant="secondary" onPress={scanBarcode} />
           </View>
         </View>
+
+        {!isNew && <ProductPhotos productId={productId!} />}
 
         <Button big title={isNew ? "Add product" : "Save changes"} onPress={save} disabled={!valid} loading={saving} />
         {!isNew && <Button title="Delete product" variant="ghost" onPress={remove} />}

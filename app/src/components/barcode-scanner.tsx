@@ -1,9 +1,11 @@
 import { useIsFocused } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { AppState, Linking, Pressable, StyleSheet, Text, View } from "react-native";
-import { Camera, useCameraPermission } from "react-native-vision-camera";
+import { useRef, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Camera } from "react-native-vision-camera";
 import { useBarcodeScannerOutput, type TargetBarcodeFormat } from "react-native-vision-camera-barcode-scanner";
-import { Button, colors } from "./ui";
+import { useAppActive } from "@/lib/use-app-active";
+import { CameraPermissionGate } from "./camera-permission";
+import { colors } from "./ui";
 
 // Retail barcodes plus the common shelf-label symbologies. QR codes are left
 // out so a QR sticker near a product isn't picked up by mistake.
@@ -20,28 +22,21 @@ export interface BarcodeScannerProps {
 }
 
 /** Live rear-camera preview that reports barcodes. */
-export function BarcodeScanner({ onCode, paused }: BarcodeScannerProps) {
-  const { hasPermission, requestPermission, canRequestPermission } = useCameraPermission();
-  const [asked, setAsked] = useState(false);
+export function BarcodeScanner(props: BarcodeScannerProps) {
+  return (
+    <CameraPermissionGate reason="Camera access is needed to scan barcodes.">
+      <LiveScanner {...props} />
+    </CameraPermissionGate>
+  );
+}
+
+function LiveScanner({ onCode, paused }: BarcodeScannerProps) {
   const [torch, setTorch] = useState(false);
   const isFocused = useIsFocused();
-  const [appActive, setAppActive] = useState(AppState.currentState === "active");
+  const appActive = useAppActive();
   const last = useRef({ code: "", at: 0 });
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
-
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", (s) => setAppActive(s === "active"));
-    return () => sub.remove();
-  }, []);
-
-  // Ask once automatically the first time the scanner is shown.
-  useEffect(() => {
-    if (!hasPermission && canRequestPermission && !asked) {
-      setAsked(true);
-      requestPermission();
-    }
-  }, [hasPermission, canRequestPermission, asked, requestPermission]);
 
   const output = useBarcodeScannerOutput({
     barcodeFormats: FORMATS,
@@ -58,18 +53,6 @@ export function BarcodeScanner({ onCode, paused }: BarcodeScannerProps) {
       console.warn("Barcode scanner error", error);
     },
   });
-
-  if (!hasPermission) {
-    return (
-      <View style={[styles.fill, styles.permission]}>
-        <Text style={styles.permissionText}>Camera access is needed to scan barcodes.</Text>
-        <Button
-          title={canRequestPermission ? "Allow camera" : "Open settings"}
-          onPress={() => (canRequestPermission ? requestPermission() : Linking.openSettings())}
-        />
-      </View>
-    );
-  }
 
   return (
     <View style={styles.fill}>
@@ -97,8 +80,6 @@ export function BarcodeScanner({ onCode, paused }: BarcodeScannerProps) {
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: "#000", overflow: "hidden" },
-  permission: { alignItems: "center", justifyContent: "center", padding: 24, gap: 16 },
-  permissionText: { color: "#fff", fontSize: 18, textAlign: "center" },
   frame: {
     position: "absolute",
     left: "10%",

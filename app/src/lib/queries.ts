@@ -5,6 +5,7 @@ import { api } from "./api";
 export const keys = {
   products: (search = "") => ["products", search] as const,
   product: (id: number) => ["product", id] as const,
+  images: (productId: number) => ["product", productId, "images"] as const,
   bill: (id: number) => ["bill", id] as const,
   bills: (status?: BillStatus) => ["bills", status ?? "all"] as const,
 };
@@ -14,6 +15,13 @@ export const useProducts = (search = "") =>
 
 export const useProduct = (id: number | null) =>
   useQuery({ queryKey: keys.product(id ?? 0), queryFn: () => api.getProduct(id!), enabled: id != null });
+
+export const useProductImages = (productId: number | null) =>
+  useQuery({
+    queryKey: keys.images(productId ?? 0),
+    queryFn: () => api.listImages(productId!),
+    enabled: productId != null,
+  });
 
 export const useBill = (id: number | null) =>
   useQuery({ queryKey: keys.bill(id ?? 0), queryFn: () => api.getBill(id!), enabled: id != null });

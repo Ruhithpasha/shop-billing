@@ -13,7 +13,15 @@ export function ProductRow({ product, onPress, selected }: { product: Product; o
         <Text style={styles.name} numberOfLines={2}>
           {product.name}
         </Text>
-        {product.barcode && <Text style={styles.sub}>{product.barcode}</Text>}
+        <Text style={styles.sub}>
+          {[
+            product.barcode,
+            product.image_count != null &&
+              (product.image_count === 0 ? "no photos" : `${product.image_count} photo${product.image_count === 1 ? "" : "s"}`),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </Text>
       </View>
       <Text style={styles.price}>
         {formatMoney(product.price)}

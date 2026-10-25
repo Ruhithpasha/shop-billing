@@ -15,3 +15,35 @@ database_name = "billing-db"
 # Any value works for local dev (`wrangler dev` uses a local SQLite file).
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
+
+# Product photos. Create once: npx wrangler r2 bucket create shop-billing-images
+# (`wrangler dev` uses a local simulated bucket, no account needed.)
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "shop-billing-images"
+
+# One vector per product photo (id = product_images.id, metadata { product_id }).
+# Create once: npx wrangler vectorize create product-images --dimensions=960 --metric=cosine
+# Vectorize has no local simulator, so `wrangler dev` talks to the real index
+# (`remote = true`); run `npx wrangler login` first.
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "product-images"
+remote = true
+
+# `npm run dev:offline`: local dev without a Cloudflare login. Local D1 and R2
+# (set up with `npm run db:migrate:offline` and `npm run db:seed:offline`), but
+# no Vectorize: an in-memory stand-in is used instead (see src/vectors.ts), so
+# photo vectors are forgotten whenever it restarts.
+[env.offline]
+name = "shop-billing-api-offline"
+
+[[env.offline.d1_databases]]
+binding = "DB"
+database_name = "billing-db"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[env.offline.r2_buckets]]
+binding = "IMAGES"
+bucket_name = "shop-billing-images"

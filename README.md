@@ -17,75 +17,104 @@ Money is stored as integers in the smallest currency unit (pence). `kg` products
 
 ### Run locally
 
-Needs Node 20+ and `jq` (for the smoke test).
+Needs Node 20+ and `jq` for the smoke test (`brew install jq` on macOS).
+Run each command on its own line; the code blocks below have no comments, so they paste cleanly into zsh.
+
+From the repo root, install all workspaces, then create the local tables and seed 10 sample products
+(seeding is safe to re-run). The local D1 database is a SQLite file in `api/.wrangler/state/`.
 
 ```bash
-npm install                                   # from repo root (installs all workspaces)
+npm install
 cd api
-npm run db:migrate:local                      # creates tables in a local SQLite D1
-npm run db:seed:local                         # 10 sample products (safe to re-run)
-npm run dev                                   # http://localhost:8787
+npm run db:migrate:local
+npm run db:seed:local
+npm run dev
 ```
 
-In a second terminal:
+Wait for `Ready on http://localhost:8787`. Then, in a second terminal in `api/`, run the end-to-end
+check of every endpoint. It should end with `All 36 checks passed`.
 
 ```bash
-cd api
-./scripts/smoke.sh                            # runs ~36 checks against every endpoint
+./scripts/smoke.sh
 ```
 
 ### Deploy to Cloudflare (cloud)
 
+`wrangler login` opens a browser (a free Cloudflare account is fine). `wrangler d1 create` prints a
+`database_id`: paste it into `api/wrangler.toml` before running the remote migrate. `npm run deploy`
+prints your URL, `https://shop-billing-api.<subdomain>.workers.dev`.
+
 ```bash
 cd api
-npx wrangler login                            # opens browser, free Cloudflare account is fine
-npx wrangler d1 create billing-db             # copy the printed database_id into wrangler.toml
+npx wrangler login
+npx wrangler d1 create billing-db
 npm run db:migrate:remote
 npm run db:seed:remote
-npm run deploy                                # prints https://shop-billing-api.<subdomain>.workers.dev
+npm run deploy
+```
+
+Then run the smoke test against the deployed URL:
+
+```bash
 ./scripts/smoke.sh https://shop-billing-api.<subdomain>.workers.dev
 ```
 
 ### Endpoints and curl examples
 
-Set `API=http://localhost:8787` (or your workers.dev URL). Errors are always `{ "error": "..." }`.
+Set the base URL first (or use your workers.dev URL). Errors are always `{ "error": "..." }`.
+
+```bash
+API=http://localhost:8787
+```
 
 **Products**
 
+| Request | What it does |
+|---|---|
+| `GET /products` | list all |
+| `GET /products?search=milk` | search by name (or exact barcode) |
+| `GET /products/barcode/:code` | exact barcode lookup, 404 if none |
+| `GET /products/:id` | one product |
+| `POST /products` | create `{ name, price, barcode?, unit }` |
+| `PATCH /products/:id` | update any of those fields |
+| `DELETE /products/:id` | delete; 409 if the product is on any bill |
+
 ```bash
-curl "$API/products"                                   # list
-curl "$API/products?search=milk"                       # search by name (or exact barcode)
-curl "$API/products/barcode/5449000000996"             # exact barcode lookup (404 if none)
-curl "$API/products/1"                                 # one product
-curl -X POST "$API/products" -H 'Content-Type: application/json' \
-  -d '{"name":"Apples (loose)","price":300,"unit":"kg"}'
-curl -X POST "$API/products" -H 'Content-Type: application/json' \
-  -d '{"name":"Orange Juice 1L","price":189,"barcode":"5012345678900","unit":"piece"}'
+curl "$API/products"
+curl "$API/products?search=milk"
+curl "$API/products/barcode/5449000000996"
+curl "$API/products/1"
+curl -X POST "$API/products" -H 'Content-Type: application/json' -d '{"name":"Apples (loose)","price":300,"unit":"kg"}'
+curl -X POST "$API/products" -H 'Content-Type: application/json' -d '{"name":"Orange Juice 1L","price":189,"barcode":"5012345678900","unit":"piece"}'
 curl -X PATCH "$API/products/1" -H 'Content-Type: application/json' -d '{"price":120}'
-curl -X DELETE "$API/products/11"                      # 409 if the product is on any bill
+curl -X DELETE "$API/products/11"
 ```
 
 **Bills**
 
-```bash
-curl -X POST "$API/bills"                              # new open bill -> {"id":1,...}
-curl "$API/bills"                                      # all bills (newest first)
-curl "$API/bills?status=held"                          # open | held | paid | merged
-curl "$API/bills/1"                                    # bill + items + product names
+| Request | What it does |
+|---|---|
+| `POST /bills` | new open bill |
+| `GET /bills`, `GET /bills?status=held` | list (newest first); status is open, held, paid or merged |
+| `GET /bills/:id` | bill with items and product names |
+| `POST /bills/:id/items` | add `{ product_id, qty }`; same product again increases qty |
+| `PATCH /bills/:id/items/:itemId` | set `{ qty }`; 0 removes the item |
+| `DELETE /bills/:id/items/:itemId` | remove an item |
+| `POST /bills/:id/hold`, `/resume`, `/pay` | change status |
+| `POST /bills/:targetId/merge/:sourceId` | merge source into target |
 
-# add item (adding the same product again increases qty)
+```bash
+curl -X POST "$API/bills"
+curl "$API/bills"
+curl "$API/bills?status=held"
+curl "$API/bills/1"
 curl -X POST "$API/bills/1/items" -H 'Content-Type: application/json' -d '{"product_id":1,"qty":2}'
 curl -X POST "$API/bills/1/items" -H 'Content-Type: application/json' -d '{"product_id":8,"qty":0.75}'
-
-# change qty (0 removes the item) / delete item
-curl -X PATCH  "$API/bills/1/items/1" -H 'Content-Type: application/json' -d '{"qty":3}'
+curl -X PATCH "$API/bills/1/items/1" -H 'Content-Type: application/json' -d '{"qty":3}'
 curl -X DELETE "$API/bills/1/items/1"
-
 curl -X POST "$API/bills/1/hold"
 curl -X POST "$API/bills/1/resume"
 curl -X POST "$API/bills/1/pay"
-
-# merge bill 2 into bill 1
 curl -X POST "$API/bills/1/merge/2"
 ```
 

@@ -1,7 +1,8 @@
 import { useIsFocused } from "expo-router";
-import { useRef, useState } from "react";
+import { useImperativeHandle, useRef, useState, type Ref } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { Camera } from "react-native-vision-camera";
+import type { Image } from "react-native-nitro-image";
+import { Camera, type CameraRef } from "react-native-vision-camera";
 import { useBarcodeScannerOutput, type TargetBarcodeFormat } from "react-native-vision-camera-barcode-scanner";
 import { useAppActive } from "@/lib/use-app-active";
 import { CameraPermissionGate } from "./camera-permission";
@@ -14,7 +15,13 @@ const FORMATS: TargetBarcodeFormat[] = ["ean-13", "ean-8", "upc-a", "upc-e", "co
 /** The same code is ignored for this long, so one barcode isn't read twice. */
 const REPEAT_MS = 2500;
 
+export interface BarcodeScannerHandle {
+  /** Snapshot of what the camera shows right now (for identifying by photo). */
+  snapshot(): Promise<Image>;
+}
+
 export interface BarcodeScannerProps {
+  ref?: Ref<BarcodeScannerHandle>;
   /** Called once per barcode read. */
   onCode: (code: string) => void;
   /** Stop reading codes (e.g. while a result is on screen). The preview keeps running. */
@@ -30,8 +37,15 @@ export function BarcodeScanner(props: BarcodeScannerProps) {
   );
 }
 
-function LiveScanner({ onCode, paused }: BarcodeScannerProps) {
+function LiveScanner({ onCode, paused, ref }: BarcodeScannerProps) {
   const [torch, setTorch] = useState(false);
+  const camera = useRef<CameraRef>(null);
+  useImperativeHandle(ref, () => ({
+    snapshot: () => {
+      if (!camera.current) return Promise.reject(new Error("Camera is not ready yet"));
+      return camera.current.takeSnapshot();
+    },
+  }));
   const isFocused = useIsFocused();
   const appActive = useAppActive();
   const last = useRef({ code: "", at: 0 });
@@ -57,6 +71,7 @@ function LiveScanner({ onCode, paused }: BarcodeScannerProps) {
   return (
     <View style={styles.fill}>
       <Camera
+        ref={camera}
         style={StyleSheet.absoluteFill}
         device="back"
         isActive={isFocused && appActive}

@@ -297,3 +297,63 @@ npx eas-cli@latest build --profile development --platform android
   which normally fits. If uploads ever fail with a CPU-limit error, lower the photo quality in
   `app/src/components/photo-capture.tsx`.
 - **Embeddings cost nothing:** they run on the phone, not on Workers AI.
+
+---
+
+## Phase 5 — Identify products by photo (`/match`)
+
+On the **Scan** tab:
+
+1. Point at a barcode as before. If **no barcode is read within about 1.5 seconds**, the app takes a
+   snapshot of the camera view and identifies the product by photo. You can also tap **Identify by photo**
+   at any time.
+2. The **3 closest products** appear as cards (photo, name, price, % match), best first. If the best match
+   is under 60%, the app says it isn't sure.
+3. Tap the right card, choose the quantity, **Add to bill**. **None of these** or **Try again** if it's wrong.
+
+Automatic identify runs once, then waits until the next item is added, so a dismissed result doesn't keep
+popping back up. Tap **Identify by photo** to run it again yourself.
+
+**How it works:** the snapshot goes through `embedImage()` on the phone (the same MobileNet model and the
+same preview snapshot used for product photos), then `POST /match` asks Vectorize for the nearest photos,
+keeps the best photo per product, and returns the top 3 products.
+
+**Tips for good matches**
+
+- 3–5 photos per product, from different sides, in the light your counter has.
+- Hold the product so it fills the middle of the camera view, like when its photos were taken.
+- Similar-looking packaging (same shape and colour) scores close together, which is why you always pick
+  from 3 instead of the app adding automatically.
+
+### API
+
+```bash
+curl -X POST "$API/match" -H 'Content-Type: application/json' -d @query.json
+```
+
+`query.json` is `{ "embedding": [960 numbers], "top_k": 3 }` (`top_k` is optional, 1–10, default 3).
+The response is `[{ "product": {...}, "score": 0.95, "image_url": "/images/12" }, ...]`, best first, one
+entry per product. Sending only an image returns 400: Workers AI has no image-embedding model, so
+embeddings are always made on the phone.
+
+New photos take a few seconds to become searchable (Vectorize indexes in the background).
+
+### Rebuild needed?
+
+No new native libraries in this phase. If phase 4's development build is installed, `npm start` picks up
+the changes. Redeploy the API for `/match`:
+
+```bash
+cd api
+npm run deploy
+```
+
+### Free-tier notes
+
+- **Vectorize queries:** Workers Free counts *queried vector dimensions* per month (about 30 million at the
+  time of writing). Each identify queries 960 dimensions, and Cloudflare's formula also counts your stored
+  vectors, so a shop with a few thousand photos gets on the order of tens of thousands of identifies a
+  month. Check Cloudflare's current Vectorize pricing page for the exact formula.
+- **Workers AI:** not used, so no neuron cost.
+- **On the phone:** MobileNetV3 is designed for phone CPUs, so identifying should take well under a second
+  plus one small request (not yet measured on a real device).

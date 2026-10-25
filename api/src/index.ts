@@ -5,6 +5,7 @@ import { productsRouter } from "./routes/products";
 import { billsRouter } from "./routes/bills";
 import { imagesRouter } from "./routes/images";
 import { lookupRouter } from "./routes/lookup";
+import { matchRouter } from "./routes/match";
 
 const app = express();
 
@@ -20,6 +21,7 @@ app.use(productsRouter);
 app.use(billsRouter);
 app.use(lookupRouter);
 app.use(imagesRouter);
+app.use(matchRouter);
 
 app.use(notFound);
 app.use(errorHandler);

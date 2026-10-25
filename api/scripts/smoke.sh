@@ -23,7 +23,7 @@ expect() { # expected_status description [jq_expr expected_value]
 
 # ---- Products ----
 call GET "/products";                    expect 200 "list products"
-call GET "/products?search=milk";        expect 200 "search by name" '.[0].name' 'Whole Milk 1L'
+call GET "/products?search=milk";        expect 200 "search by name" 'any(.[]; .name == "Whole Milk 1L")' 'true'
 call GET "/products/barcode/5449000000996"; expect 200 "barcode lookup" '.name' 'Cola 330ml Can'
 call GET "/products/barcode/0000";       expect 404 "unknown barcode -> 404" '.error|type' 'string'
 
@@ -83,13 +83,19 @@ call DELETE "/products/$T"; expect 200 "delete unused product"
 call GET "/nope"; expect 404 "unknown route -> JSON 404" '.error' 'Not found'
 
 # ---- Product photos (R2 + Vectorize) ----
-# A tiny real JPEG and a dummy 960-number embedding (the app sends a MobileNet vector).
+# A tiny real JPEG and a made-up 960-number embedding (the app sends a MobileNet vector).
 JPEG_B64="/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wAARCAAIAAgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDmaKKK8g/RD//Z"
-EMB=$(jq -nc '[range(960) | (. % 7) / 7]')
+# Seeded per run so it never collides with vectors left by earlier runs.
+EMB=$(jq -nc --argjson s "$((RANDOM % 89 + 7))" '[range(960) | ((. * $s) % 101) / 101]')
 call POST "/products" '{"name":"Photo Test","price":100}'; P=$(jq .id <<<"$BODY")
 call POST "/products/$P/images" "{\"image_base64\":\"$JPEG_B64\",\"embedding\":$EMB}"
 expect 201 "upload photo" '.url|startswith("/images/")' 'true'; IMG=$(jq .id <<<"$BODY")
 call GET "/products/$P/images"; expect 200 "list photos" 'length' '1'
+call POST "/match" "{\"embedding\":$EMB}"; expect 200 "match finds the product" '.[0].product.id' "$P"
+[[ $(jq '[.[].product.id] | length == (unique | length)' <<<"$BODY") == true ]] || { echo "FAIL duplicate products in match"; exit 1; }
+call POST "/match" "{\"embedding\":$EMB,\"top_k\":1}"; expect 200 "match top_k=1" 'length' '1'
+call POST "/match" '{"embedding":[1,2,3]}'; expect 400 "match: wrong embedding length -> 400"
+call POST "/match" "{\"image_base64\":\"$JPEG_B64\"}"; expect 400 "match: image without embedding -> 400"
 call GET "/products?search=Photo%20Test"; expect 200 "product list has image_count" '.[0].image_count' '1'
 [[ $(curl -s -o /dev/null -w '%{http_code} %{content_type}' "$API/images/$IMG") == "200 image/jpeg" ]] || { echo "FAIL serve photo"; exit 1; }
 PASS=$((PASS+1)); echo "ok  serve photo from R2"

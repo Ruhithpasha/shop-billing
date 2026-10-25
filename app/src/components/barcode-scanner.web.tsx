@@ -1,11 +1,15 @@
 import { StyleSheet, Text, View } from "react-native";
+import { useImperativeHandle } from "react";
 import type { BarcodeScannerProps } from "./barcode-scanner";
 
 /**
  * The app targets Android; the web build exists only for quick checks on a
  * computer. There is no camera scanner here, so use "Type barcode" instead.
  */
-export function BarcodeScanner(_props: BarcodeScannerProps) {
+export function BarcodeScanner({ ref }: BarcodeScannerProps) {
+  useImperativeHandle(ref, () => ({
+    snapshot: () => Promise.reject(new Error("Identifying by photo works in the Android app.")),
+  }));
   return (
     <View style={styles.fill}>
       <Text style={styles.text}>Camera scanning works in the Android app.{"\n"}Use “Type barcode” below.</Text>

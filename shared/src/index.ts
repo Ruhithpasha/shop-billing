@@ -172,3 +172,21 @@ export interface ProductImage {
   url: string;
   created_at: string;
 }
+
+// ---------- Image matching ----------
+
+export const MatchSchema = z.object({
+  /** Embedding of the photo to identify (computed on the phone, like product photos). */
+  embedding: EmbeddingSchema,
+  /** How many different products to return. */
+  top_k: z.number().int().min(1).max(10).default(3),
+});
+export type MatchRequest = z.input<typeof MatchSchema>;
+
+export interface MatchResult {
+  product: Product;
+  /** Cosine similarity of the closest photo of this product, -1..1 (higher is closer). */
+  score: number;
+  /** That closest photo, e.g. "/images/12". */
+  image_url: string;
+}

@@ -1,14 +1,15 @@
 import { useIsFocused } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { Camera, CommonResolutions, usePhotoOutput } from "react-native-vision-camera";
+import { Camera, type CameraRef } from "react-native-vision-camera";
 import { useAppActive } from "@/lib/use-app-active";
 import { embedImage, warmUpEmbeddingModel } from "@/lib/embedding";
+import { toUploadJpeg } from "@/lib/snapshot-jpeg";
 import { CameraPermissionGate } from "./camera-permission";
 import { colors } from "./ui";
 
 export interface CapturedPhoto {
-  /** The JPEG as taken (about 768x1024), for storage and thumbnails. */
+  /** JPEG of the snapshot (up to 1024 px), for storage and thumbnails. */
   jpeg: ArrayBuffer;
   /** Its image embedding, computed on the phone. */
   embedding: number[];
@@ -22,7 +23,11 @@ export interface PhotoCaptureProps {
   disabled?: boolean;
 }
 
-/** Camera with a shutter button that returns each photo plus its embedding. */
+/**
+ * Camera with a shutter button that returns each photo plus its embedding.
+ * Photos are snapshots of the preview, exactly as the scan screen takes them
+ * when identifying a product, so both are framed and oriented the same way.
+ */
 export function PhotoCapture(props: PhotoCaptureProps) {
   return (
     <CameraPermissionGate reason="Camera access is needed to photograph products.">
@@ -35,29 +40,19 @@ function LiveCapture({ onCapture, status, disabled }: PhotoCaptureProps) {
   const isFocused = useIsFocused();
   const appActive = useAppActive();
   const [busy, setBusy] = useState(false);
-  const photoOutput = usePhotoOutput({
-    targetResolution: CommonResolutions.HD_4_3,
-    containerFormat: "jpeg",
-    quality: 0.8,
-  });
+  const camera = useRef<CameraRef>(null);
 
   useEffect(warmUpEmbeddingModel, []);
 
   const shoot = async () => {
     setBusy(true);
     try {
-      const photo = await photoOutput.capturePhoto({ enableShutterSound: true }, {});
+      const image = await camera.current!.takeSnapshot();
       try {
-        const jpeg = await photo.getFileDataAsync();
-        const image = await photo.toImageAsync();
-        try {
-          const embedding = await embedImage(image);
-          await onCapture({ jpeg, embedding });
-        } finally {
-          image.dispose();
-        }
+        const [jpeg, embedding] = await Promise.all([toUploadJpeg(image), embedImage(image)]);
+        await onCapture({ jpeg, embedding });
       } finally {
-        photo.dispose();
+        image.dispose();
       }
     } finally {
       setBusy(false);
@@ -67,10 +62,10 @@ function LiveCapture({ onCapture, status, disabled }: PhotoCaptureProps) {
   return (
     <View style={styles.fill}>
       <Camera
+        ref={camera}
         style={StyleSheet.absoluteFill}
         device="back"
         isActive={isFocused && appActive}
-        outputs={[photoOutput]}
         enableNativeTapToFocusGesture
       />
       <View pointerEvents="none" style={styles.frameWrap}>

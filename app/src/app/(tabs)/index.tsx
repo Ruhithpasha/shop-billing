@@ -1,29 +1,49 @@
 import { Image } from "expo-image";
-import { router, Tabs } from "expo-router";
-import { useCallback, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import type { BarcodeLookup, Product, Unit } from "@shop/shared";
-import { BarcodeScanner } from "@/components/barcode-scanner";
+import { router, Tabs, useIsFocused } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import type { BarcodeLookup, MatchResult, Product, Unit } from "@shop/shared";
+import { BarcodeScanner, type BarcodeScannerHandle } from "@/components/barcode-scanner";
 import { QtyPicker } from "@/components/qty-picker";
 import { Button, colors, inputStyle, text } from "@/components/ui";
 import { UnitToggle } from "@/components/unit-toggle";
 import { CURRENCY_SYMBOL } from "@/config";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, apiUrl } from "@/lib/api";
 import { useCurrentBill } from "@/lib/current-bill";
 import { errorMessage } from "@/lib/dialogs";
+import { embedImage, warmUpEmbeddingModel } from "@/lib/embedding";
 import { formatMoney, parseMoney, unitLabel } from "@/lib/money";
 import { useBill, useInvalidateProducts, useStoreBill } from "@/lib/queries";
 
 type Mode =
   | { kind: "idle" }
   | { kind: "loading"; code: string }
+  | { kind: "identifying" }
+  | { kind: "matches"; matches: MatchResult[] }
   | { kind: "found"; product: Product }
   | { kind: "new"; code: string; suggestion: BarcodeLookup | null }
   | { kind: "error"; code: string; message: string };
 
+/** Products without a readable barcode are identified by photo after this long. */
+const AUTO_IDENTIFY_MS = 1500;
+/** Below this similarity the top match is shown as a guess. */
+const CONFIDENT_SCORE = 0.6;
+const CAN_IDENTIFY = Platform.OS === "android";
+
 /**
  * Scan a barcode -> our product (pick qty, add) or, if we don't stock it yet,
- * a new-product form pre-filled from the online lookup.
+ * a new-product form pre-filled from the online lookup. No barcode within
+ * ~1.5 s (or "Identify") -> match a camera snapshot against product photos.
  */
 export default function ScanScreen() {
   const [mode, setMode] = useState<Mode>({ kind: "idle" });
@@ -31,6 +51,45 @@ export default function ScanScreen() {
   const [typing, setTyping] = useState(false);
   const { billId, ensureBill } = useCurrentBill();
   const storeBill = useStoreBill();
+  const scanner = useRef<BarcodeScannerHandle>(null);
+  const isFocused = useIsFocused();
+  // Auto-identify fires once, then waits until the next item is added, so a
+  // dismissed result doesn't keep popping back up.
+  const [autoArmed, setAutoArmed] = useState(true);
+
+  useEffect(() => {
+    if (CAN_IDENTIFY) warmUpEmbeddingModel();
+  }, []);
+
+  const identify = useCallback(async (auto = false) => {
+    setTyping(false);
+    setFlash(null);
+    setAutoArmed(false);
+    setMode({ kind: "identifying" });
+    try {
+      const image = await scanner.current!.snapshot();
+      let embedding: number[];
+      try {
+        embedding = await embedImage(image);
+      } finally {
+        image.dispose();
+      }
+      const matches = await api.match({ embedding });
+      if (matches.length > 0) return setMode({ kind: "matches", matches });
+      if (auto) return setMode({ kind: "idle" }); // nothing has photos yet: stay quiet
+      setMode({ kind: "error", code: "", message: "No product photos yet. Add photos in Products to identify items." });
+    } catch (e) {
+      if (auto) return setMode({ kind: "idle" });
+      setMode({ kind: "error", code: "", message: errorMessage(e) });
+    }
+  }, []);
+
+  const idle = mode.kind === "idle" && !typing;
+  useEffect(() => {
+    if (!CAN_IDENTIFY || !idle || !autoArmed || !isFocused) return;
+    const t = setTimeout(() => identify(true), AUTO_IDENTIFY_MS);
+    return () => clearTimeout(t);
+  }, [idle, autoArmed, isFocused, identify]);
 
   const handleCode = useCallback(async (code: string) => {
     setTyping(false);
@@ -51,6 +110,7 @@ export default function ScanScreen() {
     storeBill(bill);
     setFlash(`✓ Added ${product.name} × ${qty}${product.unit === "kg" ? " kg" : ""}`);
     setMode({ kind: "idle" });
+    setAutoArmed(true); // ready for the next item
   };
 
   const reset = () => setMode({ kind: "idle" });
@@ -60,7 +120,7 @@ export default function ScanScreen() {
       <Tabs.Screen options={{ headerRight: () => <BillChip billId={billId} /> }} />
 
       <View style={styles.camera}>
-        <BarcodeScanner onCode={handleCode} paused={mode.kind !== "idle" || typing} />
+        <BarcodeScanner ref={scanner} onCode={handleCode} paused={mode.kind !== "idle" || typing} />
       </View>
 
       <View style={styles.panel}>
@@ -69,7 +129,14 @@ export default function ScanScreen() {
             <TypeBarcode onSubmit={handleCode} onCancel={() => setTyping(false)} />
           ) : (
             <>
-              {flash ? <Text style={styles.flash}>{flash}</Text> : <Text style={styles.hint}>Point the camera at a barcode</Text>}
+              {flash ? (
+                <Text style={styles.flash}>{flash}</Text>
+              ) : (
+                <Text style={styles.hint}>
+                  {CAN_IDENTIFY ? "Point at the barcode, or show the product to identify it" : "Point the camera at a barcode"}
+                </Text>
+              )}
+              {CAN_IDENTIFY && <Button title="Identify by photo" onPress={() => identify()} />}
               <View style={styles.row}>
                 <Button title="Type barcode" variant="secondary" onPress={() => setTyping(true)} style={styles.flex} />
                 <Button title="Search by name" variant="secondary" onPress={() => router.push("/add-item")} style={styles.flex} />
@@ -82,6 +149,22 @@ export default function ScanScreen() {
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={text.muted}>Looking up {mode.code}…</Text>
           </View>
+        )}
+
+        {mode.kind === "identifying" && (
+          <View style={styles.loading}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={text.muted}>Identifying…</Text>
+          </View>
+        )}
+
+        {mode.kind === "matches" && (
+          <Matches
+            matches={mode.matches}
+            onPick={(product) => setMode({ kind: "found", product })}
+            onRetry={() => identify()}
+            onCancel={reset}
+          />
         )}
 
         {mode.kind === "found" && (
@@ -97,7 +180,11 @@ export default function ScanScreen() {
             <Text style={styles.error}>{mode.message}</Text>
             <View style={styles.row}>
               <Button title="Cancel" variant="secondary" onPress={reset} style={styles.flex} />
-              <Button title="Try again" onPress={() => handleCode(mode.code)} style={styles.flex} />
+              <Button
+                title="Try again"
+                onPress={() => (mode.code ? handleCode(mode.code) : identify())}
+                style={styles.flex}
+              />
             </View>
           </View>
         )}
@@ -116,6 +203,49 @@ function BillChip({ billId }: { billId: number | null }) {
         {count > 0 ? `${count} item${count === 1 ? "" : "s"} · ${formatMoney(bill.data!.total)}` : "Bill"} ›
       </Text>
     </Pressable>
+  );
+}
+
+/** Top matches by photo, best first. Tap the right one to pick a quantity. */
+function Matches({
+  matches,
+  onPick,
+  onRetry,
+  onCancel,
+}: {
+  matches: MatchResult[];
+  onPick: (p: Product) => void;
+  onRetry: () => void;
+  onCancel: () => void;
+}) {
+  const sure = matches[0].score >= CONFIDENT_SCORE;
+  return (
+    <View style={{ gap: 10 }}>
+      <Text style={styles.matchTitle}>{sure ? "Is it one of these?" : "Not sure. Pick the right one:"}</Text>
+      {matches.map((m, i) => (
+        <Pressable
+          key={m.product.id}
+          accessibilityRole="button"
+          onPress={() => onPick(m.product)}
+          style={({ pressed }) => [styles.matchCard, i === 0 && sure && styles.matchBest, pressed && { opacity: 0.7 }]}
+        >
+          <Image source={apiUrl(m.image_url)} style={styles.matchThumb} contentFit="cover" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.matchName} numberOfLines={2}>
+              {m.product.name}
+            </Text>
+            <Text style={text.muted}>
+              {formatMoney(m.product.price)}
+              {unitLabel(m.product.unit)} · {Math.max(0, Math.round(m.score * 100))}% match
+            </Text>
+          </View>
+        </Pressable>
+      ))}
+      <View style={styles.row}>
+        <Button title="None of these" variant="secondary" onPress={onCancel} style={styles.flex} />
+        <Button title="Try again" variant="secondary" onPress={onRetry} style={styles.flex} />
+      </View>
+    </View>
   );
 }
 
@@ -290,6 +420,21 @@ const styles = StyleSheet.create({
   newScroll: { maxHeight: 460 },
   newTitle: { fontSize: 20, fontWeight: "700", color: colors.text },
   thumb: { width: 64, height: 64, borderRadius: 8, backgroundColor: colors.bg },
+  matchTitle: { fontSize: 18, fontWeight: "700", color: colors.text },
+  matchCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 8,
+    minHeight: 72,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  matchBest: { borderColor: colors.primary, borderWidth: 2, backgroundColor: "#EEF2FF" },
+  matchThumb: { width: 56, height: 56, borderRadius: 8, backgroundColor: colors.bg },
+  matchName: { fontSize: 18, fontWeight: "700", color: colors.text },
   chip: { marginRight: 12, paddingHorizontal: 14, minHeight: 40, borderRadius: 20, backgroundColor: "#E0E7FF", justifyContent: "center" },
   chipText: { fontSize: 15, fontWeight: "700", color: colors.primary },
 });

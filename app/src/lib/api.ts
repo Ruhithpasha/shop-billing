@@ -5,6 +5,8 @@ import type {
   BillStatus,
   BillSummary,
   BillWithItems,
+  MatchRequest,
+  MatchResult,
   Product,
   ProductCreate,
   ProductImage,
@@ -66,6 +68,9 @@ export const api = {
     request<ProductImage>("POST", `/products/${productId}/images`, body),
   deleteImage: (productId: number, imageId: number) =>
     request<{ ok: true }>("DELETE", `/products/${productId}/images/${imageId}`),
+
+  /** Products whose photos look most like this embedding, best first. */
+  match: (body: MatchRequest) => request<MatchResult[]>("POST", "/match", body),
 
   // Bills
   createBill: () => request<BillWithItems>("POST", "/bills"),

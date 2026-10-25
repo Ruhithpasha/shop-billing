@@ -40,6 +40,8 @@ check of every endpoint. It should end with `All 36 checks passed`.
 
 ### Deploy to Cloudflare (cloud)
 
+The easiest way is the one-command setup in **Phase 6** (`npm run setup:cloud`). The steps below are the manual version.
+
 `wrangler login` opens a browser (a free Cloudflare account is fine). `wrangler d1 create` prints a
 `database_id`: paste it into `api/wrangler.toml` before running the remote migrate. `npm run deploy`
 prints your URL, `https://shop-billing-api.<subdomain>.workers.dev`.
@@ -357,3 +359,111 @@ npm run deploy
 - **Workers AI:** not used, so no neuron cost.
 - **On the phone:** MobileNetV3 is designed for phone CPUs, so identifying should take well under a second
   plus one small request (not yet measured on a real device).
+
+---
+
+## Phase 6 — Deploy everything and build the Android APK
+
+Two steps: the API goes to Cloudflare with one command, then EAS builds an installable APK that talks to it.
+
+### 1. API on Cloudflare (one command)
+
+From the repo root on your Mac (Node 20+):
+
+```bash
+npm install
+cd api
+npm run setup:cloud -- --seed
+```
+
+It walks through 7 steps and is safe to re-run (anything that already exists is reused):
+
+1. Logs in to Cloudflare (opens the browser the first time).
+2. Creates the **D1** database `billing-db` and writes its id into `api/wrangler.toml`.
+3. Creates the tables. `--seed` also adds the 10 sample products, but only if the database is empty.
+   Leave `--seed` off for a real shop.
+4. Creates the **R2** bucket `shop-billing-images`.
+5. Creates the **Vectorize** index `product-images` (960 dimensions, cosine). If one exists with the wrong
+   size, it stops and tells you what to do.
+6. Deploys the API and prints `https://shop-billing-api.<your-subdomain>.workers.dev`.
+7. Writes that URL into `app/src/config.ts`, then checks the API answers.
+
+First time on Cloudflare? Wrangler may ask you to pick a free `workers.dev` subdomain. If the R2 step
+says R2 isn't enabled, open **Cloudflare dashboard → R2** once and enable it, then run the command again.
+Cloudflare may ask for a payment method to turn R2 on even for the free tier; usage within the free
+allowance isn't charged.
+
+Check the deployed API (needs `jq`; it adds a few test products and bills, so run it before entering
+real data):
+
+```bash
+./scripts/smoke.sh https://shop-billing-api.<your-subdomain>.workers.dev
+```
+
+Prefer to run each step by hand? These are the commands it uses:
+
+```bash
+npx wrangler login
+npx wrangler d1 create billing-db
+npm run db:migrate:remote
+npm run db:seed:remote
+npx wrangler r2 bucket create shop-billing-images
+npx wrangler vectorize create product-images --dimensions=960 --metric=cosine
+npm run deploy
+```
+
+(Paste the id from `d1 create` into `database_id` at the top of `api/wrangler.toml`, and the deployed URL
+into `app/src/config.ts`.)
+
+### 2. Android APK (EAS Build)
+
+`app/src/config.ts` must contain the deployed URL first (step 7 above does it). The URL is built into the
+APK, so the phone needs no computer or dev server: just internet.
+
+```bash
+cd ../app
+npx eas-cli@latest login
+npx eas-cli@latest init
+npm run build:apk
+```
+
+`eas init` links the app to your free Expo account (once). `npm run build:apk` builds the **preview**
+profile: a standalone, installable APK. When it finishes, EAS prints a link and a QR code. Open it on the
+phone, download the APK and install it (Android asks you to allow installs from your browser the first
+time). Each build gets a higher version number, so a new APK installs over the old one. All data lives in the
+cloud, so nothing is lost when you reinstall.
+
+The two build profiles in `app/eas.json`:
+
+| Profile | Command | Use |
+|---|---|---|
+| `preview` | `npm run build:apk` | The app for the counter. Standalone APK. |
+| `development` | `npm run build:dev` | For changing code: loads JavaScript from `npm start` on your Mac. |
+
+### Updating later
+
+- **API change:** `cd api` then `npm run deploy`. Phones pick it up immediately.
+- **Database change:** add a new file in `api/migrations/`, then `npm run db:migrate:remote`.
+- **App change:** `npm run build:apk` again and install the new APK.
+- **Live API logs:** `npm run logs` in `api/`.
+
+### Free tiers, all in one place
+
+| Service | Free allowance (at the time of writing) | What uses it |
+|---|---|---|
+| Cloudflare Workers | 100,000 requests/day, 10 ms CPU per request | Every API call |
+| D1 | 5 GB, 5 million rows read/day, 100,000 rows written/day | Products, bills |
+| R2 | 10 GB stored, 1M writes + 10M reads/month, free downloads | Product photos (~50,000) |
+| Vectorize | ~5M stored + ~30M queried vector dimensions/month | Photo matching (~5,000 photos) |
+| Workers AI | not used | Embeddings run on the phone |
+| Open Food Facts / UPCitemdb | free; UPCitemdb ~100 lookups/day | Unknown barcodes only |
+| EAS Build (Expo free plan) | a limited number of builds/month, lower-priority queue | Each APK |
+
+Going over a Cloudflare free limit makes requests fail until the daily or monthly reset. Nothing is
+charged on the free plan. Exact limits change, so check each service's pricing page.
+
+### Before using it for real
+
+There is **no login or API key** (prototype, by design): anyone who learns the `workers.dev` URL can read
+and change products and bills. Don't share the URL. Adding access control is the first thing to do before
+wider use.

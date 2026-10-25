@@ -7,14 +7,16 @@
     "dev": "wrangler dev",
     "dev:lan": "wrangler dev --ip 0.0.0.0",
     "dev:offline": "wrangler dev --env offline",
-    "deploy": "wrangler deploy",
+    "deploy": "wrangler deploy --env=",
     "typecheck": "tsc --noEmit",
     "db:migrate:local": "wrangler d1 migrations apply billing-db --local",
-    "db:migrate:remote": "wrangler d1 migrations apply billing-db --remote",
+    "db:migrate:remote": "wrangler d1 migrations apply billing-db --remote --env=",
     "db:seed:local": "wrangler d1 execute billing-db --local --file=./scripts/seed.sql",
-    "db:seed:remote": "wrangler d1 execute billing-db --remote --file=./scripts/seed.sql",
+    "db:seed:remote": "wrangler d1 execute billing-db --remote --env= --file=./scripts/seed.sql",
     "db:migrate:offline": "wrangler d1 migrations apply billing-db --local --env offline",
-    "db:seed:offline": "wrangler d1 execute billing-db --local --env offline --file=./scripts/seed.sql"
+    "db:seed:offline": "wrangler d1 execute billing-db --local --env offline --file=./scripts/seed.sql",
+    "setup:cloud": "node scripts/setup-cloud.mjs",
+    "logs": "wrangler tail --env="
   },
   "dependencies": {
     "@shop/shared": "*",

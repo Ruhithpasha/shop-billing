@@ -1,0 +1,17 @@
+name = "shop-billing-api"
+main = "src/index.ts"
+# Express needs the Node.js HTTP server APIs (node:http), available with
+# nodejs_compat on compatibility dates after 2025-08-15.
+compatibility_date = "2025-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "billing-db"
+# Replace with the id printed by `npx wrangler d1 create billing-db`.
+# Any value works for local dev (`wrangler dev` uses a local SQLite file).
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"

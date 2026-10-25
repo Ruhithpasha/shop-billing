@@ -1,0 +1,27 @@
+{
+  "name": "api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:migrate:local": "wrangler d1 migrations apply billing-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply billing-db --remote",
+    "db:seed:local": "wrangler d1 execute billing-db --local --file=./scripts/seed.sql",
+    "db:seed:remote": "wrangler d1 execute billing-db --remote --file=./scripts/seed.sql"
+  },
+  "dependencies": {
+    "@shop/shared": "*",
+    "express": "^5.1.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251001.0",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.40.0"
+  }
+}

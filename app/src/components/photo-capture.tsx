@@ -1,8 +1,9 @@
 import { useIsFocused } from "expo-router";
 import { useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { Camera, type CameraRef } from "react-native-vision-camera";
+import { CameraView } from "expo-camera";
 import { useAppActive } from "@/lib/use-app-active";
+import { takePhotoImage } from "@/lib/camera-photo";
 import { guarded } from "@/lib/crash-guard";
 import { embedImage } from "@/lib/embedding";
 import { toUploadJpeg } from "@/lib/snapshot-jpeg";
@@ -10,7 +11,7 @@ import { CameraPermissionGate } from "./camera-permission";
 import { colors } from "./ui";
 
 export interface CapturedPhoto {
-  /** JPEG of the snapshot (up to 1024 px), for storage and thumbnails. */
+  /** JPEG of the photo (up to 1024 px), for storage and thumbnails. */
   jpeg: ArrayBuffer;
   /** Its image embedding, computed on the phone. */
   embedding: number[];
@@ -26,8 +27,8 @@ export interface PhotoCaptureProps {
 
 /**
  * Camera with a shutter button that returns each photo plus its embedding.
- * Photos are snapshots of the preview, exactly as the scan screen takes them
- * when identifying a product, so both are framed and oriented the same way.
+ * Photos are taken exactly as the scan screen takes them when identifying a
+ * product, so both are framed and oriented the same way.
  */
 export function PhotoCapture(props: PhotoCaptureProps) {
   return (
@@ -41,12 +42,12 @@ function LiveCapture({ onCapture, status, disabled }: PhotoCaptureProps) {
   const isFocused = useIsFocused();
   const appActive = useAppActive();
   const [busy, setBusy] = useState(false);
-  const camera = useRef<CameraRef>(null);
+  const camera = useRef<CameraView>(null);
 
   const shoot = async () => {
     setBusy(true);
     try {
-      const image = await camera.current!.takeSnapshot();
+      const image = await takePhotoImage(camera.current);
       try {
         const [jpeg, embedding] = await Promise.all([toUploadJpeg(image), guarded("identify", () => embedImage(image))]);
         await onCapture({ jpeg, embedding });
@@ -60,13 +61,7 @@ function LiveCapture({ onCapture, status, disabled }: PhotoCaptureProps) {
 
   return (
     <View style={styles.fill}>
-      <Camera
-        ref={camera}
-        style={StyleSheet.absoluteFill}
-        device="back"
-        isActive={isFocused && appActive}
-        enableNativeTapToFocusGesture
-      />
+      <CameraView ref={camera} style={StyleSheet.absoluteFill} facing="back" active={isFocused && appActive} />
       <View pointerEvents="none" style={styles.frameWrap}>
         <View style={styles.frame} />
       </View>

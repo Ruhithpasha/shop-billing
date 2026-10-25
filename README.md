@@ -6,7 +6,7 @@ No authentication (prototype). Everything runs on Cloudflare free tiers.
 ```
 /api     Express API running on Cloudflare Workers (D1, R2, Vectorize)
 /shared  zod schemas + TypeScript types shared by api and app
-/app     Expo app for Android (Expo SDK 58, expo-router, TanStack Query, VisionCamera)
+/app     Expo app for Android (Expo SDK 58, expo-router, TanStack Query, expo-camera)
 ```
 
 Money is stored as integers in the smallest currency unit (pence). `kg` products are priced per kg.
@@ -195,7 +195,9 @@ The **Scan** tab opens when the app starts.
 - The chip at the top right shows the current bill (items and total). Tap it to open the bill.
 - In **Products → edit**, the **Scan** button next to the barcode field fills it from the camera.
 
-Camera: `react-native-vision-camera` v5 with its ML Kit barcode scanner (EAN-13/8, UPC-A/E, Code 128/39, ITF).
+Camera: `expo-camera` with its built-in ML Kit barcode scanner (EAN-13/8, UPC-A/E, Code 128/39, ITF-14).
+The plan named `react-native-vision-camera`; its v5 release crashed the app on a real phone as soon as the
+camera started, so it was replaced by Expo's own camera module, which is built and tested for this Expo SDK.
 
 ### Rebuild needed
 
@@ -307,7 +309,7 @@ npx eas-cli@latest build --profile development --platform android
 On the **Scan** tab:
 
 1. Point at a barcode as before. If **no barcode is read within about 1.5 seconds**, the app takes a
-   snapshot of the camera view and identifies the product by photo. You can also tap **Identify by photo**
+   photo with the camera and identifies the product by it. You can also tap **Identify by photo**
    at any time.
 2. The **3 closest products** appear as cards (photo, name, price, % match), best first. If the best match
    is under 60%, the app says it isn't sure.
@@ -316,8 +318,8 @@ On the **Scan** tab:
 Automatic identify runs once, then waits until the next item is added, so a dismissed result doesn't keep
 popping back up. Tap **Identify by photo** to run it again yourself.
 
-**How it works:** the snapshot goes through `embedImage()` on the phone (the same MobileNet model and the
-same preview snapshot used for product photos), then `POST /match` asks Vectorize for the nearest photos,
+**How it works:** the photo goes through `embedImage()` on the phone (the same MobileNet model and the
+same kind of camera photo used for product photos), then `POST /match` asks Vectorize for the nearest photos,
 keeps the best photo per product, and returns the top 3 products.
 
 **Tips for good matches**

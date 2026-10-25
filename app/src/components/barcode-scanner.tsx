@@ -1,22 +1,21 @@
+import { CameraView, type BarcodeScanningResult, type BarcodeType } from "expo-camera";
 import { useIsFocused } from "expo-router";
 import { useImperativeHandle, useRef, useState, type Ref } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { Image } from "react-native-nitro-image";
-import { Camera, type CameraRef } from "react-native-vision-camera";
-import { useBarcodeScannerOutput, type TargetBarcodeFormat } from "react-native-vision-camera-barcode-scanner";
 import { useAppActive } from "@/lib/use-app-active";
 import { CameraPermissionGate } from "./camera-permission";
 import { colors } from "./ui";
 
 // Retail barcodes plus the common shelf-label symbologies. QR codes are left
 // out so a QR sticker near a product isn't picked up by mistake.
-const FORMATS: TargetBarcodeFormat[] = ["ean-13", "ean-8", "upc-a", "upc-e", "code-128", "code-39", "itf"];
+const FORMATS: BarcodeType[] = ["ean13", "ean8", "upc_a", "upc_e", "code128", "code39", "itf14"];
 
 /** The same code is ignored for this long, so one barcode isn't read twice. */
 const REPEAT_MS = 2500;
 
 export interface BarcodeScannerHandle {
-  /** Snapshot of what the camera shows right now (for identifying by photo). */
+  /** Photo of what the camera shows right now (for identifying by photo). */
   snapshot(): Promise<Image>;
 }
 
@@ -28,7 +27,7 @@ export interface BarcodeScannerProps {
   paused?: boolean;
 }
 
-/** Live rear-camera preview that reports barcodes. */
+/** Live rear-camera preview that reports barcodes (expo-camera + ML Kit). */
 export function BarcodeScanner(props: BarcodeScannerProps) {
   return (
     <CameraPermissionGate reason="Camera access is needed to scan barcodes.">
@@ -39,46 +38,39 @@ export function BarcodeScanner(props: BarcodeScannerProps) {
 
 function LiveScanner({ onCode, paused, ref }: BarcodeScannerProps) {
   const [torch, setTorch] = useState(false);
-  const camera = useRef<CameraRef>(null);
-  useImperativeHandle(ref, () => ({
-    snapshot: () => {
-      if (!camera.current) return Promise.reject(new Error("Camera is not ready yet"));
-      return camera.current.takeSnapshot();
-    },
-  }));
   const isFocused = useIsFocused();
   const appActive = useAppActive();
+  const camera = useRef<CameraView>(null);
   const last = useRef({ code: "", at: 0 });
-  const pausedRef = useRef(paused);
-  pausedRef.current = paused;
 
-  const output = useBarcodeScannerOutput({
-    barcodeFormats: FORMATS,
-    onBarcodeScanned(barcodes) {
-      if (pausedRef.current) return;
-      const code = barcodes.find((b) => b.rawValue)?.rawValue?.trim();
-      if (!code) return;
-      const now = Date.now();
-      if (code === last.current.code && now - last.current.at < REPEAT_MS) return;
-      last.current = { code, at: now };
-      onCode(code);
+  useImperativeHandle(ref, () => ({
+    snapshot: async () => {
+      // Loaded on first use, not at app start.
+      const { takePhotoImage } = await import("@/lib/camera-photo");
+      return takePhotoImage(camera.current);
     },
-    onError(error) {
-      console.warn("Barcode scanner error", error);
-    },
-  });
+  }));
+
+  const onScanned = (result: BarcodeScanningResult) => {
+    const code = result.data?.trim();
+    if (!code) return;
+    const now = Date.now();
+    if (code === last.current.code && now - last.current.at < REPEAT_MS) return;
+    last.current = { code, at: now };
+    onCode(code);
+  };
 
   return (
     <View style={styles.fill}>
-      <Camera
+      <CameraView
         ref={camera}
         style={StyleSheet.absoluteFill}
-        device="back"
-        isActive={isFocused && appActive}
-        outputs={[output]}
-        torchMode={torch ? "on" : "off"}
-        enableNativeTapToFocusGesture
-        enableNativeZoomGesture
+        facing="back"
+        active={isFocused && appActive}
+        enableTorch={torch}
+        barcodeScannerSettings={{ barcodeTypes: FORMATS }}
+        // No handler while paused: expo-camera then stops reporting codes.
+        onBarcodeScanned={paused ? undefined : onScanned}
       />
       <View pointerEvents="none" style={styles.frame} />
       {paused && <View pointerEvents="none" style={styles.dim} />}

@@ -4,7 +4,8 @@ import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MAX_IMAGES_PER_PRODUCT } from "@shop/shared";
-import { PhotoCapture, type CapturedPhoto } from "@/components/photo-capture";
+import type { CapturedPhoto } from "@/components/photo-capture";
+import { SafePhotoCapture } from "@/components/safe-native";
 import { Button, colors } from "@/components/ui";
 import { api } from "@/lib/api";
 import { toBase64 } from "@/lib/base64";
@@ -41,7 +42,7 @@ export default function ProductPhotosScreen() {
   return (
     <View style={styles.screen}>
       <Stack.Screen options={{ title: product.data ? `Photos: ${product.data.name}` : "Photos" }} />
-      <PhotoCapture
+      <SafePhotoCapture
         onCapture={onCapture}
         disabled={full}
         status={full ? `${count} photos (maximum)` : `${count} of ${SUGGESTED} photos`}

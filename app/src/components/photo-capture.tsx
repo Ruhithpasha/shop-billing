@@ -1,9 +1,10 @@
 import { useIsFocused } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { Camera, type CameraRef } from "react-native-vision-camera";
 import { useAppActive } from "@/lib/use-app-active";
-import { embedImage, warmUpEmbeddingModel } from "@/lib/embedding";
+import { guarded } from "@/lib/crash-guard";
+import { embedImage } from "@/lib/embedding";
 import { toUploadJpeg } from "@/lib/snapshot-jpeg";
 import { CameraPermissionGate } from "./camera-permission";
 import { colors } from "./ui";
@@ -42,14 +43,12 @@ function LiveCapture({ onCapture, status, disabled }: PhotoCaptureProps) {
   const [busy, setBusy] = useState(false);
   const camera = useRef<CameraRef>(null);
 
-  useEffect(warmUpEmbeddingModel, []);
-
   const shoot = async () => {
     setBusy(true);
     try {
       const image = await camera.current!.takeSnapshot();
       try {
-        const [jpeg, embedding] = await Promise.all([toUploadJpeg(image), embedImage(image)]);
+        const [jpeg, embedding] = await Promise.all([toUploadJpeg(image), guarded("identify", () => embedImage(image))]);
         await onCapture({ jpeg, embedding });
       } finally {
         image.dispose();

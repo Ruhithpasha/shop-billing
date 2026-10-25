@@ -33,9 +33,9 @@ def main():
         saved = os.path.join(tmp, "saved_model")
         base.export(saved, format="tf_saved_model")
         converter = tf.lite.TFLiteConverter.from_saved_model(saved)
-        # float16 weights: half the file size, same accuracy for this use.
+        # Dynamic-range quantization: weights stored as int8 (about a quarter of
+        # float32), activations stay float. Matching quality is unchanged in tests.
         converter.optimizations = [tf.lite.Optimize.DEFAULT]
-        converter.target_spec.supported_types = [tf.float16]
         tflite = converter.convert()
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "wb") as f:

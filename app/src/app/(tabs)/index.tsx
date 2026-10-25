@@ -13,15 +13,16 @@ import {
   View,
 } from "react-native";
 import type { BarcodeLookup, MatchResult, Product, Unit } from "@shop/shared";
-import { BarcodeScanner, type BarcodeScannerHandle } from "@/components/barcode-scanner";
+import type { BarcodeScannerHandle } from "@/components/barcode-scanner";
 import { QtyPicker } from "@/components/qty-picker";
+import { SafeBarcodeScanner } from "@/components/safe-native";
 import { Button, colors, inputStyle, text } from "@/components/ui";
 import { UnitToggle } from "@/components/unit-toggle";
 import { CURRENCY_SYMBOL } from "@/config";
 import { api, ApiError, apiUrl } from "@/lib/api";
 import { useCurrentBill } from "@/lib/current-bill";
 import { errorMessage } from "@/lib/dialogs";
-import { embedImage, warmUpEmbeddingModel } from "@/lib/embedding";
+import { crashedLastTime, guarded } from "@/lib/crash-guard";
 import { formatMoney, parseMoney, unitLabel } from "@/lib/money";
 import { useBill, useInvalidateProducts, useStoreBill } from "@/lib/queries";
 
@@ -57,8 +58,15 @@ export default function ScanScreen() {
   // dismissed result doesn't keep popping back up.
   const [autoArmed, setAutoArmed] = useState(true);
 
+  // If the photo model crashed the app last time, don't run it automatically.
+  const [identifyCrashed, setIdentifyCrashed] = useState(false);
   useEffect(() => {
-    if (CAN_IDENTIFY) warmUpEmbeddingModel();
+    if (!CAN_IDENTIFY) return;
+    crashedLastTime("identify").then((crashed) => {
+      if (!crashed) return;
+      setIdentifyCrashed(true);
+      setAutoArmed(false);
+    });
   }, []);
 
   const identify = useCallback(async (auto = false) => {
@@ -67,10 +75,16 @@ export default function ScanScreen() {
     setAutoArmed(false);
     setMode({ kind: "identifying" });
     try {
-      const image = await scanner.current!.snapshot();
+      if (!scanner.current) throw new Error("The camera isn't running");
+      const image = await scanner.current.snapshot();
       let embedding: number[];
       try {
-        embedding = await embedImage(image);
+        // Loaded on first use (not at app start) and crash-guarded: it's native TFLite code.
+        embedding = await guarded("identify", async () => {
+          const { embedImage } = await import("@/lib/embedding");
+          return embedImage(image);
+        });
+        setIdentifyCrashed(false);
       } finally {
         image.dispose();
       }
@@ -120,7 +134,7 @@ export default function ScanScreen() {
       <Tabs.Screen options={{ headerRight: () => <BillChip billId={billId} /> }} />
 
       <View style={styles.camera}>
-        <BarcodeScanner ref={scanner} onCode={handleCode} paused={mode.kind !== "idle" || typing} />
+        <SafeBarcodeScanner ref={scanner} onCode={handleCode} paused={mode.kind !== "idle" || typing} />
       </View>
 
       <View style={styles.panel}>
@@ -134,6 +148,11 @@ export default function ScanScreen() {
               ) : (
                 <Text style={styles.hint}>
                   {CAN_IDENTIFY ? "Point at the barcode, or show the product to identify it" : "Point the camera at a barcode"}
+                </Text>
+              )}
+              {CAN_IDENTIFY && identifyCrashed && (
+                <Text style={styles.warn}>
+                  Identify by photo closed the app last time, so it no longer runs automatically.
                 </Text>
               )}
               {CAN_IDENTIFY && <Button title="Identify by photo" onPress={() => identify()} />}
@@ -406,6 +425,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   hint: { fontSize: 17, color: colors.muted, textAlign: "center" },
+  warn: { fontSize: 15, color: colors.warning, textAlign: "center" },
   flash: { fontSize: 17, color: colors.success, fontWeight: "700", textAlign: "center" },
   row: { flexDirection: "row", gap: 10 },
   flex: { flex: 1 },

@@ -1,7 +1,7 @@
 import { router } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BarcodeScanner } from "@/components/barcode-scanner";
+import { SafeBarcodeScanner } from "@/components/safe-native";
 import { colors } from "@/components/ui";
 import { deliverScan } from "@/lib/scan-result";
 
@@ -10,7 +10,7 @@ export default function ScanBarcodeScreen() {
   const insets = useSafeAreaInsets();
   return (
     <View style={styles.screen}>
-      <BarcodeScanner
+      <SafeBarcodeScanner
         onCode={(code) => {
           deliverScan(code);
           router.back();

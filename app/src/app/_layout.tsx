@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Stack, type ErrorBoundaryProps } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { ScrollView, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { colors } from "@/components/ui";
+import { Button, colors } from "@/components/ui";
 import { CurrentBillProvider } from "@/lib/current-bill";
 
 const queryClient = new QueryClient({
@@ -35,5 +36,20 @@ export default function RootLayout() {
         </CurrentBillProvider>
       </QueryClientProvider>
     </GestureHandlerRootView>
+  );
+}
+
+/** Shown instead of closing the app if a screen throws while rendering. */
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.bg, padding: 24, paddingTop: 64, gap: 16 }}>
+      <Text style={{ fontSize: 22, fontWeight: "700", color: colors.text }}>Something went wrong</Text>
+      <ScrollView style={{ maxHeight: 240 }}>
+        <Text selectable style={{ fontSize: 15, color: colors.danger }}>
+          {error.message}
+        </Text>
+      </ScrollView>
+      <Button title="Try again" onPress={retry} />
+    </View>
   );
 }

@@ -467,3 +467,60 @@ charged on the free plan. Exact limits change, so check each service's pricing p
 There is **no login or API key** (prototype, by design): anyone who learns the `workers.dev` URL can read
 and change products and bills. Don't share the URL. Adding access control is the first thing to do before
 wider use.
+
+### Over-the-air updates (EAS Update)
+
+APKs built after this change include `expo-updates`, so JavaScript fixes can reach installed phones
+without reinstalling. Link it to your Expo project once (it writes your project's update URL into
+`app/app.json`):
+
+```bash
+cd app
+npx eas-cli@latest update:configure
+```
+
+Then build and install the APK once more (`npm run build:apk`). After that, ship a fix with:
+
+```bash
+npm run update -- --message "what changed"
+```
+
+The app downloads it on the next launch and uses it on the launch after that. Updates can't change native
+code (new native libraries, permissions, `app.json` plugins). Those still need `npm run build:apk`.
+
+### APK size
+
+`app/app.json` builds only for real phone processors (`arm64-v8a`, plus `armeabi-v7a` for older 32-bit
+phones) instead of also including the two emulator architectures, and compresses the JavaScript bundle.
+The photo model is int8-quantized (3.3 MB). Code shrinking (R8) is left off on purpose: the camera and
+TFLite libraries don't ship shrinker rules, and turning it on can make them crash.
+
+### If the app closes when you open it
+
+The camera and the photo model are native code, so the app now guards them:
+
+- They load only when used, and if one of them throws an error, that screen shows the error instead of
+  the app closing.
+- If one of them makes the whole app close (a native crash), the next launch notices, keeps that feature
+  off, and says which one it was. Billing, products and search keep working.
+
+To see the exact cause of a crash, read the phone's log from your Mac:
+
+1. On the phone: **Settings → About phone →** tap **Build number** 7 times, then **Settings → System →
+   Developer options →** turn on **USB debugging**. Connect the phone by USB and allow the prompt.
+2. On the Mac:
+
+```bash
+brew install --cask android-platform-tools
+adb devices
+adb logcat -c
+```
+
+3. Open the app until it closes, then save the log:
+
+```bash
+adb logcat -d -b crash > crash.txt
+adb logcat -d | grep -iE "AndroidRuntime|FATAL|ReactNativeJS|libc|nitro|tflite|camera" > app-log.txt
+```
+
+`crash.txt` and `app-log.txt` (in the folder you ran the commands from) say exactly what failed.

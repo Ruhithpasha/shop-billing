@@ -5,6 +5,10 @@ import type { BarcodeLookup } from "@shop/shared";
 //   Open Food Facts      groceries and drinks (millions of products)
 //   Open Products Facts  general goods (stationery, household, electronics...)
 //   Open Beauty Facts    cosmetics and toiletries
+// Web search (optional, India): if a Brave Search API key is set, the barcode
+//   number is searched with country=IN and the product name is taken from an
+//   Indian shop's listing (BigBasket, JioMart, Amazon.in, ...). Best coverage
+//   for Indian products, which the free databases mostly lack.
 // UPCitemdb trial: general retail goods, mostly US; ~100 lookups/day per IP. Tried last.
 
 const USER_AGENT = "ShopBilling/0.1 (prototype billing app)";
@@ -82,8 +86,94 @@ async function getJson(url: string): Promise<unknown> {
   }
 }
 
+// Indian shopping sites, preferred when picking a search result.
+const INDIAN_SHOPS = [
+  "bigbasket.com",
+  "jiomart.com",
+  "amazon.in",
+  "flipkart.com",
+  "blinkit.com",
+  "zeptonow.com",
+  "swiggy.com",
+  "dmart.in",
+  "smartbazaar",
+  "nykaa.com",
+  "1mg.com",
+  "pharmeasy.in",
+  "netmeds.com",
+  "meesho.com",
+];
+
+/** Turns a shop listing's page title into a product name, or null if it doesn't look like one. */
+export function productNameFromTitle(title: string, code: string): string | null {
+  let t = title.replace(/\s+/g, " ").trim();
+  t = t.replace(/^buy\s+/i, "");
+  // Product name comes first; the site name and category follow a separator.
+  t = t.split(/\s+[|:–—-]\s+|\s*:\s+/)[0];
+  t = t
+    .replace(/\s+(online\s+)?(at|@)\s+(the\s+)?(best|lowest)\s+price.*$/i, "")
+    .replace(/\s+online(\s+in\s+india)?$/i, "")
+    .replace(/\s+price\s+in\s+india.*$/i, "")
+    .replace(/[\s,.-]+$/, "")
+    .trim();
+  if (t.length < 3 || t.length > 120) return null;
+  if (t.includes(code) || /\b(barcode|ean|upc|gtin|lookup)\b/i.test(t)) return null;
+  if (!/[a-z]{3}/i.test(t)) return null;
+  return t;
+}
+
+interface SearchResult {
+  title?: string;
+  url?: string;
+  thumbnail?: { src?: string };
+}
+
+/** Picks a product name from Brave Search results, preferring Indian shopping sites. */
+export function fromWebSearch(code: string, json: unknown): BarcodeLookup | null {
+  const results = ((json as { web?: { results?: SearchResult[] } } | null)?.web?.results ?? []).filter(
+    (r) => typeof r.title === "string" && typeof r.url === "string",
+  );
+  const isShop = (r: SearchResult) => INDIAN_SHOPS.some((d) => r.url!.includes(d));
+  const ordered = [...results.filter(isShop), ...results.filter((r) => !isShop(r))];
+  for (const r of ordered) {
+    const name = productNameFromTitle(r.title!, code);
+    if (!name) continue;
+    let site = "web";
+    try {
+      site = new URL(r.url!).hostname.replace(/^www\./, "");
+    } catch {}
+    return {
+      barcode: code,
+      name,
+      brand: null,
+      image_url: str(r.thumbnail?.src),
+      source: "websearch",
+      source_label: `Web search (${site})`,
+    };
+  }
+  return null;
+}
+
+async function searchWeb(code: string, apiKey: string): Promise<unknown> {
+  try {
+    const res = await fetch(
+      `https://api.search.brave.com/res/v1/web/search?q=${code}&country=IN&search_lang=en&count=10`,
+      {
+        headers: { Accept: "application/json", "X-Subscription-Token": apiKey },
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      },
+    );
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Returns the first match from the public databases, or null. */
-export async function lookupBarcodeOnline(code: string): Promise<BarcodeLookup | null> {
+export async function lookupBarcodeOnline(
+  code: string,
+  options: { braveSearchKey?: string } = {},
+): Promise<BarcodeLookup | null> {
   if (!isRetailBarcode(code)) return null;
   const fields = "product_name,generic_name,brands,quantity,image_front_small_url,image_front_url,image_url";
   // Ask the whole family at once; prefer them in the order listed.
@@ -94,5 +184,9 @@ export async function lookupBarcodeOnline(code: string): Promise<BarcodeLookup |
   );
   const found = results.find((r) => r != null);
   if (found) return found;
+  if (options.braveSearchKey) {
+    const web = fromWebSearch(code, await searchWeb(code, options.braveSearchKey));
+    if (web) return web;
+  }
   return fromUpcItemDb(code, await getJson(`https://api.upcitemdb.com/prod/trial/lookup?upc=${code}`));
 }

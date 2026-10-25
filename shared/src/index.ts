@@ -135,7 +135,7 @@ export interface BarcodeLookup {
   name: string;
   brand: string | null;
   image_url: string | null;
-  source: "openfoodfacts" | "openproductsfacts" | "openbeautyfacts" | "upcitemdb";
+  source: "openfoodfacts" | "openproductsfacts" | "openbeautyfacts" | "websearch" | "upcitemdb";
   /** Human-readable database name, e.g. "Open Food Facts". */
   source_label: string;
 }

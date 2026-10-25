@@ -4,5 +4,7 @@ declare namespace Cloudflare {
     DB: D1Database;
     IMAGES: R2Bucket;
     VECTORIZE: Vectorize;
+    /** Optional secret (npx wrangler secret put BRAVE_SEARCH_KEY): enables India web-search lookups. */
+    BRAVE_SEARCH_KEY?: string;
   }
 }

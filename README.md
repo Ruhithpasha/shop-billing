@@ -187,7 +187,7 @@ The **Scan** tab opens when the app starts.
 
 - **Barcode we sell:** the product appears. Pick the quantity and tap **Add to bill**; scanning resumes.
 - **Barcode we don't sell yet:** the API looks it up online (Open Food Facts, Open Products Facts and
-  Open Beauty Facts together, then UPCitemdb). The form is
+  Open Beauty Facts together, then an India web search if enabled, then UPCitemdb). The form is
   pre-filled with the name and photo it found. Enter **your price**, choose piece/kg, tap **Save & add**.
   The product is saved with its barcode, so next time it's found instantly. If nothing is found online,
   type the name yourself.
@@ -527,3 +527,30 @@ adb logcat -d | grep -iE "AndroidRuntime|FATAL|ReactNativeJS|libc|nitro|tflite|c
 ```
 
 `crash.txt` and `app-log.txt` (in the folder you ran the commands from) say exactly what failed.
+
+---
+
+## Better lookups for Indian products (web search)
+
+The free product databases have few Indian products, and there is no free official Indian one (GS1
+India's DataKart is members-only). Shop sites like BigBasket, JioMart and Amazon.in can't be scraped:
+their terms forbid it and they block automated requests from cloud servers.
+
+What works: a search API. When the databases don't know a barcode, the API searches the barcode number
+on the web with India selected and takes the product name from the matching shop listing (BigBasket,
+JioMart, Amazon.in, Flipkart, Blinkit, Zepto, DMart, Nykaa, 1mg, ...). You still enter your own price.
+
+It's off until you add a **Brave Search API** key:
+
+1. Sign up at https://brave.com/search/api/ and subscribe to the Search plan. It includes free monthly
+   credit (about 1,000 searches at the time of writing; a card is required). In the dashboard, set a
+   spending limit so you're never charged beyond the credit.
+2. Create an API key, then save it as a secret on the API (paste the key when asked; this also redeploys):
+
+```bash
+cd api
+npx wrangler secret put BRAVE_SEARCH_KEY --env=
+```
+
+Each barcode is searched only once: after **Save & add** it's your product and later scans don't look
+it up again. To turn it off: `npx wrangler secret delete BRAVE_SEARCH_KEY --env=`.

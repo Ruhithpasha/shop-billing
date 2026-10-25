@@ -23,6 +23,7 @@ import { api, ApiError, apiUrl } from "@/lib/api";
 import { useCurrentBill } from "@/lib/current-bill";
 import { errorMessage } from "@/lib/dialogs";
 import { crashedLastTime, guarded } from "@/lib/crash-guard";
+import { scanFeedback } from "@/lib/scan-feedback";
 import { formatMoney, parseMoney, unitLabel } from "@/lib/money";
 import { useBill, useInvalidateProducts, useStoreBill } from "@/lib/queries";
 
@@ -40,6 +41,18 @@ const AUTO_IDENTIFY_MS = 1500;
 /** Below this similarity the top match is shown as a guess. */
 const CONFIDENT_SCORE = 0.6;
 const CAN_IDENTIFY = Platform.OS === "android";
+/** Identify gives up after this long, so it can never leave the screen stuck. */
+const IDENTIFY_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (v) => (clearTimeout(t), resolve(v)),
+      (e) => (clearTimeout(t), reject(e)),
+    );
+  });
+}
 
 /**
  * Scan a barcode -> our product (pick qty, add) or, if we don't stock it yet,
@@ -69,30 +82,44 @@ export default function ScanScreen() {
     });
   }, []);
 
+  // Each identify gets a number; a barcode read meanwhile bumps it, and the
+  // stale identify result is then ignored (a barcode always wins).
+  const identifyRun = useRef(0);
+
   const identify = useCallback(async (auto = false) => {
+    const run = ++identifyRun.current;
+    const current = () => run === identifyRun.current;
     setTyping(false);
     setFlash(null);
     setAutoArmed(false);
     setMode({ kind: "identifying" });
     try {
-      if (!scanner.current) throw new Error("The camera isn't running");
-      const image = await scanner.current.snapshot();
-      let embedding: number[];
-      try {
-        // Loaded on first use (not at app start) and crash-guarded: it's native TFLite code.
-        embedding = await guarded("identify", async () => {
-          const { embedImage } = await import("@/lib/embedding");
-          return embedImage(image);
-        });
-        setIdentifyCrashed(false);
-      } finally {
-        image.dispose();
-      }
-      const matches = await api.match({ embedding });
+      const matches = await withTimeout(
+        (async () => {
+          if (!scanner.current) throw new Error("The camera isn't running");
+          const image = await scanner.current.snapshot();
+          let embedding: number[];
+          try {
+            // Loaded on first use (not at app start) and crash-guarded: it's native TFLite code.
+            embedding = await guarded("identify", async () => {
+              const { embedImage } = await import("@/lib/embedding");
+              return embedImage(image);
+            });
+            setIdentifyCrashed(false);
+          } finally {
+            image.dispose();
+          }
+          return api.match({ embedding });
+        })(),
+        IDENTIFY_TIMEOUT_MS,
+        "Identifying took too long. Try again, or scan the barcode.",
+      );
+      if (!current()) return;
       if (matches.length > 0) return setMode({ kind: "matches", matches });
       if (auto) return setMode({ kind: "idle" }); // nothing has photos yet: stay quiet
       setMode({ kind: "error", code: "", message: "No product photos yet. Add photos in Products to identify items." });
     } catch (e) {
+      if (!current()) return;
       if (auto) return setMode({ kind: "idle" });
       setMode({ kind: "error", code: "", message: errorMessage(e) });
     }
@@ -106,6 +133,8 @@ export default function ScanScreen() {
   }, [idle, autoArmed, isFocused, identify]);
 
   const handleCode = useCallback(async (code: string) => {
+    identifyRun.current++; // cancel any identify in progress
+    scanFeedback();
     setTyping(false);
     setFlash(null);
     setMode({ kind: "loading", code });
@@ -134,7 +163,12 @@ export default function ScanScreen() {
       <Tabs.Screen options={{ headerRight: () => <BillChip billId={billId} /> }} />
 
       <View style={styles.camera}>
-        <SafeBarcodeScanner ref={scanner} onCode={handleCode} paused={mode.kind !== "idle" || typing} />
+        <SafeBarcodeScanner
+          ref={scanner}
+          onCode={handleCode}
+          // Keep reading barcodes while identifying by photo: a barcode beats a photo guess.
+          paused={(mode.kind !== "idle" && mode.kind !== "identifying") || typing}
+        />
       </View>
 
       <View style={styles.panel}>

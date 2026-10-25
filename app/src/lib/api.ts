@@ -23,16 +23,29 @@ export class ApiError extends Error {
   }
 }
 
+/** Requests give up after this long, so a bad connection never leaves a screen spinning forever. */
+const TIMEOUT_MS = 15_000;
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     res = await fetch(`${API_BASE_URL}${path}`, {
       method,
       headers: body === undefined ? undefined : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
     });
   } catch {
-    throw new ApiError(0, `Can't reach the server at ${API_BASE_URL}`);
+    throw new ApiError(
+      0,
+      controller.signal.aborted
+        ? "The server took too long to answer. Check the internet connection and try again."
+        : `Can't reach the server at ${API_BASE_URL}`,
+    );
+  } finally {
+    clearTimeout(timer);
   }
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new ApiError(res.status, data?.error ?? `Request failed (${res.status})`);
